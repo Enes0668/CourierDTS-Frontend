@@ -1,0 +1,211 @@
+/**
+ * Telemetry & Logging Service
+ * Sistem hatalarını ve kurye teslimat metriklerini takip eder.
+ * Gerçek bir API olmadığı için verileri şimdilik LocalStorage'a kaydeder (Simülasyon).
+ */
+
+class TelemetryService {
+  constructor() {
+    this.STORAGE_KEY = 'telemetry_logs';
+    this.BACKUP_KEY = 'telemetry_offline_backup';
+    this.CHUNK_SIZE = 50; // Sepet kapasitesi (Koordinat sayısı)
+    this.FLUSH_INTERVAL_MS = 30000; // 30 saniye
+
+    // Sistemin o anki kimlik kartı
+    this.context = {
+      courier_id: null,
+      delivery_id: null,
+      session_id: crypto.randomUUID() // Benzersiz oturum kimliği oluşturur
+    };
+
+    // Koordinatları biriktireceğimiz sepet ve sayacı
+    this.pathBuffer = [];
+    this.flushTimer = null; 
+    
+    // Offline'dan Online'a dönüşü dinle
+    this._listenForOnlineRecovery();
+  }
+
+  setContext(courierId, deliveryId) {
+    this.context.courier_id = courierId;
+    this.context.delivery_id = deliveryId;
+    console.log('[TELEMETRY] Kimlik tanımlandı:', this.context);
+  }
+
+  // ==========================================
+  // LOGLAMA (SİSTEM SAĞLIĞI)
+  // ==========================================
+
+  trackError(errorCode, errorObj) {
+    const payload = {
+      error_code: errorCode,
+      error_message: errorObj?.message || 'Unknown Error',
+      stack_trace: errorObj?.stack || ''
+    };
+    this._packageAndSend('SYSTEM_ERROR', payload);
+  }
+
+  // ==========================================
+  // TELEMETRİ (İŞ METRİKLERİ VE YAŞAM DÖNGÜSÜ)
+  // ==========================================
+
+  startDelivery(startName, endName, plannedDistance, plannedPath) {
+    this.pathBuffer = []; 
+    this._stopTimer(); // Güvenlik önlemi
+
+    const payload = {
+      start_location_name: startName,
+      end_location_name: endName,
+      planned_distance: plannedDistance,
+      planned_path: plannedPath
+    };
+    this._packageAndSend('DELIVERY_STARTED', payload);
+  }
+
+  /**
+   * Kurye hareket ettikçe çağrılır.
+   */
+  addCoordinate(lat, lng) {
+    this.pathBuffer.push({ lat, lng });
+
+    // Sepete ilk veri düştüğünde 30 saniyelik zamanlayıcıyı başlat
+    if (this.pathBuffer.length === 1) {
+      this._startTimer();
+    }
+
+    // Eğer 50 koordinata ulaşıldıysa süreyi beklemeden yolla
+    if (this.pathBuffer.length >= this.CHUNK_SIZE) {
+      this._flushBuffer('DELIVERY_ROUTE_UPDATE');
+    }
+  }
+
+  /**
+   * Kurye hedefe vardı ama işlem daha bitmedi (Bekleme)
+   */
+  courierArrived() {
+    // Hedefe varıldığında sepette kalan son kırıntıları yolla ve sayacı kapat
+    if (this.pathBuffer.length > 0) {
+      this._flushBuffer('DELIVERY_ROUTE_UPDATE');
+    } else {
+      this._stopTimer(); // Sepet boşsa bile sayacı kesin durdur
+    }
+    
+    // Varış logunu yolla
+    this._packageAndSend('DELIVERY_ARRIVED', { status: 'WAITING_AT_ADDRESS' });
+  }
+
+  completeDelivery(actualDistance) {
+    if (this.pathBuffer.length > 0) {
+      this._flushBuffer('DELIVERY_ROUTE_UPDATE');
+    }
+    this._stopTimer();
+
+    const payload = {
+      actual_distance: actualDistance
+    };
+    this._packageAndSend('DELIVERY_COMPLETED', payload);
+  }
+
+  cancelDelivery(reason, actualDistance) {
+    if (this.pathBuffer.length > 0) {
+      this._flushBuffer('DELIVERY_ROUTE_UPDATE');
+    }
+    this._stopTimer();
+
+    const payload = {
+      cancel_reason: reason,
+      actual_distance: actualDistance
+    };
+    this._packageAndSend('DELIVERY_CANCELLED', payload);
+  }
+
+  // ==========================================
+  // İÇ (PRIVATE) YARDIMCI FONKSİYONLAR
+  // ==========================================
+
+  _startTimer() {
+    if (!this.flushTimer) {
+      this.flushTimer = setInterval(() => {
+        if (this.pathBuffer.length > 0) {
+          // 30 saniye doldu, sepeti boşalt
+          this._flushBuffer('DELIVERY_ROUTE_UPDATE');
+        }
+      }, this.FLUSH_INTERVAL_MS);
+    }
+  }
+
+  _stopTimer() {
+    if (this.flushTimer) {
+      clearInterval(this.flushTimer);
+      this.flushTimer = null;
+    }
+  }
+
+  /**
+   * Sepeti dışarı yollar ve sayacı sıfırlar.
+   */
+  _flushBuffer(eventName) {
+    if (this.pathBuffer.length === 0) return;
+    
+    const payload = {
+      actual_path_segment: [...this.pathBuffer]
+    };
+    this._packageAndSend(eventName, payload);
+    
+    // TAM KONUŞTUĞUMUZ GİBİ: Veri gitti, sepeti boşalt ve sayacı sıfırla
+    this.pathBuffer = []; 
+    this._stopTimer(); 
+  }
+
+  _packageAndSend(eventName, payload) {
+    const packet = {
+      event_name: eventName,
+      timestamp: new Date().toISOString(),
+      context: { ...this.context },
+      payload: payload
+    };
+
+    const color = eventName === 'SYSTEM_ERROR' ? 'red' : 'green';
+    console.log(`%c[${eventName}]`, `color: ${color}; font-weight: bold;`, packet);
+
+    this._mockApiRequest(packet);
+  }
+
+  _mockApiRequest(packet) {
+    if (!navigator.onLine) {
+      console.warn('[TELEMETRY] İnternet yok! Paket yedekleniyor...', packet.event_name);
+      this._saveToOfflineBackup(packet);
+      return;
+    }
+
+    try {
+      const existingLogs = JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '[]');
+      existingLogs.push(packet);
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(existingLogs));
+    } catch (e) {
+      console.error('[TELEMETRY] LocalStorage kayıt hatası:', e);
+    }
+  }
+
+  _saveToOfflineBackup(packet) {
+    const backup = JSON.parse(localStorage.getItem(this.BACKUP_KEY) || '[]');
+    backup.push(packet);
+    localStorage.setItem(this.BACKUP_KEY, JSON.stringify(backup));
+  }
+
+  _listenForOnlineRecovery() {
+    window.addEventListener('online', () => {
+      console.log('[TELEMETRY] İnternet bağlantısı geri geldi. Yedekler kontrol ediliyor...');
+      const backup = JSON.parse(localStorage.getItem(this.BACKUP_KEY) || '[]');
+      
+      if (backup.length > 0) {
+        console.log(`[TELEMETRY] ${backup.length} adet yedek paket sunucuya gönderiliyor...`);
+        const existingLogs = JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '[]');
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify([...existingLogs, ...backup]));
+        localStorage.removeItem(this.BACKUP_KEY);
+      }
+    });
+  }
+}
+
+export const telemetry = new TelemetryService();
