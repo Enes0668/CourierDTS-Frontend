@@ -57,64 +57,63 @@
   </div>
 </template>
 
-<script setup>
-import { ref, defineEmits, watch } from 'vue';
-import { locations } from '../data/locations'; // Hazırladığımız verileri çekiyoruz, *************aktif konumdan listede yok******************
+<script>
+import { locations } from '../data/locations';
 
-// eslint-disable-next-line no-undef
-defineProps({
-  isDelivered: Boolean
-});
-
-// eslint-disable-next-line no-undef
-const emit = defineEmits(['route-planned', 'selection-changed', 'delivery-success', 'delivery-cancelled']);
-
-// Kullanıcının seçimlerini tutacak reaktif değişkenler
-const selectedStart = ref('');
-const selectedEnd = ref('');
-
-// Durum (State) Yönetimi Değişkenleri
-const isRouteActive = ref(false); // Rota aktif mi?
-const showConfirmation = ref(false); // Onay kutusu açık mı?
-
-// Seçimler değiştikçe önizleme fırlat
-watch([selectedStart, selectedEnd], ([newStart, newEnd]) => {
-  if (!isRouteActive.value) {
-    emit('selection-changed', { start: newStart, end: newEnd });
-  }
-});
-
-// Güzergahı Çiz Butonu Fonksiyonu
-const onDrawRoute = () => {
-  if (selectedStart.value && selectedEnd.value) {
-    isRouteActive.value = true; // Arayüzü kilitle
-    emit('route-planned', {
-      start: selectedStart.value,
-      end: selectedEnd.value
-    });
-  }
-};
-
-// Teslim Edildi butonuna basıldığında
-const handleDeliveredChoice = () => {
-  isRouteActive.value = false;
-  selectedStart.value = '';
-  selectedEnd.value = '';
-  // Şefe (App.vue) "Teslimat Başarılı" bilgisini ver
-  emit('delivery-success'); 
-};
-
-// İptal Onay/Red Fonksiyonu
-const handleCancelChoice = (isConfirmed) => {
-  if (isConfirmed) {
-    isRouteActive.value = false;
-    showConfirmation.value = false;
-    selectedStart.value = '';
-    selectedEnd.value = '';
-    // Şefe (App.vue) "Teslimat İptal Edildi" bilgisini ver
-    emit('delivery-cancelled'); 
-  } else {
-    showConfirmation.value = false;
+export default {
+  name: 'ControlPanel',
+  props: {
+    isDelivered: Boolean
+  },
+  emits: ['route-planned', 'selection-changed', 'delivery-success', 'delivery-cancelled'],
+  data() {
+    return {
+      locations: locations,
+      selectedStart: '',
+      selectedEnd: '',
+      isRouteActive: false,
+      showConfirmation: false
+    };
+  },
+  watch: {
+    selectedStart(newStart) {
+      if (!this.isRouteActive) {
+        this.$emit('selection-changed', { start: newStart, end: this.selectedEnd });
+      }
+    },
+    selectedEnd(newEnd) {
+      if (!this.isRouteActive) {
+        this.$emit('selection-changed', { start: this.selectedStart, end: newEnd });
+      }
+    }
+  },
+  methods: {
+    onDrawRoute() {
+      if (this.selectedStart && this.selectedEnd) {
+        this.isRouteActive = true;
+        this.$emit('route-planned', {
+          start: this.selectedStart,
+          end: this.selectedEnd
+        });
+      }
+    },
+    handleDeliveredChoice() {
+      this.isRouteActive = false;
+      this.selectedStart = '';
+      this.selectedEnd = '';
+      this.$emit('delivery-success'); 
+    },
+    handleCancelChoice(isConfirmed) {
+      if (isConfirmed) {
+        this.isRouteActive = false;
+        this.showConfirmation = false;
+        this.selectedStart = '';
+        this.selectedEnd = '';
+        this.$emit('delivery-cancelled'); 
+      } else {
+        this.showConfirmation = false;
+      }
+    }
   }
 };
 </script>
@@ -150,10 +149,9 @@ select {
   font-size: 16px;
   outline: none;
   cursor: pointer;
-  background-color: white; /* Kilitsiz durum için arka plan */
+  background-color: white; 
 }
 
-/* Menü kilitliykenki görünümü */
 select:disabled {
   background-color: #e9ecef;
   cursor: not-allowed;
@@ -164,7 +162,6 @@ select:focus:not(:disabled) {
   border-color: #42b983;
 }
 
-/* YENİ: Butonlar üst üste bindiğinde dikey sıralanması için güncellendi */
 .action-area {
   min-width: 180px;
   display: flex;
@@ -174,7 +171,6 @@ select:focus:not(:disabled) {
   justify-content: center;
 }
 
-/* Genel Buton Stili */
 .btn {
   padding: 12px 20px;
   border: none;
@@ -183,7 +179,7 @@ select:focus:not(:disabled) {
   font-weight: bold;
   cursor: pointer;
   transition: all 0.3s;
-  width: 100%; /* Buton genişlikleri eşitlendi */
+  width: 100%; 
   box-sizing: border-box;
 }
 
@@ -194,7 +190,6 @@ select:focus:not(:disabled) {
 .draw-btn:hover:not(:disabled) { background-color: #33a06f; }
 .draw-btn:disabled { background-color: #e9ecef; color: #adb5bd; cursor: not-allowed; }
 
-/* YENİ: Teslim Edildi Buton Stili (Yeşil) */
 .delivered-btn {
   background-color: #28a745;
   color: white;
@@ -207,7 +202,6 @@ select:focus:not(:disabled) {
 }
 .cancel-btn:hover { background-color: #bb2d3b; }
 
-/* Onay Kutusu Stilleri */
 .confirmation-dialog {
   display: flex;
   flex-direction: column;
@@ -246,16 +240,15 @@ select:focus:not(:disabled) {
 }
 .btn-yes:hover { background-color: #bb2d3b; }
 
-/* --- MOBİL UYUM (RESPONSIVE) AYARLARI --- */
 @media (max-width: 768px) {
   .control-panel {
-    flex-direction: column; /* Yan yanadan alt altaya geçiş */
-    align-items: stretch; /* Elemanları sağdan soldan ekran genişliğine sündür */
+    flex-direction: column; 
+    align-items: stretch; 
     gap: 15px;
   }
 
   .action-area {
-    width: 100%; /* Butonların bulunduğu alanın dar kalmasını engelle */
+    width: 100%; 
     margin-top: 10px;
   }
 }
