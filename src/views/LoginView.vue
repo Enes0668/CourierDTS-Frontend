@@ -77,9 +77,15 @@ export default {
           localStorage.setItem('admin_id', response.data.adminId);
           this.$router.push('/admin');
         } else {
-          // Kurye Login (Şimdilik kimlik doğrulama yok, sadece ID)
+          // Gerçek Kurye Login API Çağrısı
+          const response = await api.post('/courier/login', {
+            name: this.username,
+            password: this.password
+          });
+          
+          localStorage.setItem('jwt_token', response.data.token);
           localStorage.setItem('user_role', 'courier');
-          localStorage.setItem('courier_id', this.username);
+          localStorage.setItem('courier_id', response.data.courierId);
           this.$router.push('/courier');
         }
       } catch (error) {
