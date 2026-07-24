@@ -35,7 +35,7 @@
               </div>
               <div class="pkg-sub">
                 {{ pkg.description }}<br>
-                <small>Alış: {{ getLocationName(pkg.pickupLocationId) }} ➔ Hedef: {{ getLocationName(pkg.dropoffLocationId) }}</small>
+                <small>Alış: {{ getLocationName(pkg.pickupLocId) }} ➔ Hedef: {{ getLocationName(pkg.dropoffLocId) }}</small>
               </div>
             </li>
           </ul>
@@ -50,7 +50,7 @@
               </div>
               <div class="pkg-sub">
                 {{ pkg.description }}<br>
-                <small>Alış: {{ getLocationName(pkg.pickupLocationId) }} ➔ Hedef: {{ getLocationName(pkg.dropoffLocationId) }}</small>
+                <small>Alış: {{ getLocationName(pkg.pickupLocId) }} ➔ Hedef: {{ getLocationName(pkg.dropoffLocId) }}</small>
               </div>
             </li>
           </ul>
@@ -239,20 +239,25 @@ export default {
       };
       poll();
     },
-    assignSelectedToCourier() {
+    async assignSelectedToCourier() {
       const courier = this.couriers.find(c => c.id === this.selectedCourierId);
       if(!courier) return;
 
-      this.selectedPoolPackages.forEach(pkgId => {
-        const pkg = this.packages.find(p => p.id === pkgId);
-        if (pkg) {
-          pkg.assignedCourierId = this.selectedCourierId;
-          this.recentPackages.unshift(pkg);
+      try {
+        for (const pkgId of this.selectedPoolPackages) {
+          await dataService.assignPackage(pkgId, this.selectedCourierId);
+          const pkg = this.packages.find(p => p.id === pkgId);
+          if (pkg) this.recentPackages.unshift(pkg);
         }
-      });
-      
-      toast.success(`${this.selectedPoolPackages.length} paket ${courier.name} adlı kuryeye atandı!`);
-      this.selectedPoolPackages = []; // Reset selection
+        
+        toast.success(`${this.selectedPoolPackages.length} paket ${courier.name} adlı kuryeye atandı!`);
+        this.selectedPoolPackages = []; // Reset selection
+        
+        // Atamalar bittikten sonra en güncel listeyi sunucudan çekiyoruz
+        await this.fetchData();
+      } catch (error) {
+        toast.error("Paketleri atarken bir hata oluştu.");
+      }
     },
     async createPackageToPool() {
       const payload = {

@@ -96,8 +96,8 @@
             </div>
             <div class="pkg-body">
               <p class="pkg-desc">{{ pkg.description || 'İsimsiz Paket' }}</p>
-              <small>Hedef: <strong>{{ getLocationName(pkg.dropoffLocationId) }}</strong></small>
-              <button v-if="pkg.pickupLocationId === currentLocation.id" @click="undoPickup(pkg)" class="undo-btn">🔙 Geri Bırak (İptal)</button>
+              <small>Hedef: <strong>{{ getLocationName(pkg.dropoffLocId) }}</strong></small>
+              <button v-if="pkg.pickupLocId === currentLocation.id" @click="undoPickup(pkg)" class="undo-btn">🔙 Geri Bırak (İptal)</button>
             </div>
           </div>
         </div>
@@ -112,7 +112,7 @@
             </div>
             <div class="pkg-body">
               <p class="pkg-desc">{{ pkg.description || 'İsimsiz Paket' }}</p>
-              <small>Rota: <strong>{{ getLocationName(pkg.pickupLocationId) }}</strong> ➔ <strong>{{ getLocationName(pkg.dropoffLocationId) }}</strong></small>
+              <small>Rota: <strong>{{ getLocationName(pkg.pickupLocId) }}</strong> ➔ <strong>{{ getLocationName(pkg.dropoffLocId) }}</strong></small>
             </div>
           </div>
         </div>
@@ -212,11 +212,11 @@ export default {
     },
     packagesToPickup() {
       if(!this.selectedNextStop) return [];
-      return this.pendingPackages.filter(p => p.pickupLocationId === this.selectedNextStop.id);
+      return this.pendingPackages.filter(p => p.pickupLocId === this.selectedNextStop.id);
     },
     packagesToDropoff() {
       if(!this.selectedNextStop) return [];
-      return this.myPackages.filter(p => p.dropoffLocationId === this.selectedNextStop.id);
+      return this.myPackages.filter(p => p.dropoffLocId === this.selectedNextStop.id);
     }
   },
   async mounted() {

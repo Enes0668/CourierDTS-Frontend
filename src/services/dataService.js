@@ -41,6 +41,17 @@ export const dataService = {
     }
   },
 
+  async assignPackage(packageId, courierId) {
+    try {
+      // Enes'in yeni eklediği Atama (Assign) Endpoint'i
+      const response = await api.put(`/packages/${packageId}/assign`, { courierId });
+      return response.data;
+    } catch (error) {
+      console.error("API Error (assignPackage):", error);
+      throw error;
+    }
+  },
+
   async startJourney(courierId, startLocationId, endLocationId) {
     console.log("[Axios] startJourney çağrıldı");
     const response = await api.post('/journeys/start', { courierId, startLocationId, endLocationId });
