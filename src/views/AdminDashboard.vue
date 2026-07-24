@@ -216,7 +216,7 @@ export default {
       this.couriers = await dataService.getCouriers();
     },
     getLocationName(id) {
-      const loc = this.locations.find(l => l.id === id);
+      const loc = this.locations.find(l => l.id == id);
       return loc ? loc.name : 'Bilinmeyen Konum';
     },
     startPolling() {
@@ -261,7 +261,7 @@ export default {
         priority: this.newPkg.priority,
         pickupLocationId: this.newPkg.pickupLocationId,
         dropoffLocationId: this.newPkg.dropoffLocationId,
-        assignedCourierId: this.selectedCourierId || 1 // For demo, immediately assign to bot
+        assignedCourierId: null // Boş gönderiyoruz ki Havuza düşsün
       };
       
       await dataService.createPackage(payload);
