@@ -4,6 +4,8 @@
  * Gerçek bir API olmadığı için verileri şimdilik LocalStorage'a kaydeder (Simülasyon).
  */
 
+import api from '@/api/index.js';
+
 class TelemetryService {
   constructor() {
     this.STORAGE_KEY = 'telemetry_logs';
@@ -168,10 +170,10 @@ class TelemetryService {
     const color = eventName === 'SYSTEM_ERROR' ? 'red' : 'green';
     console.log(`%c[${eventName}]`, `color: ${color}; font-weight: bold;`, packet);
 
-    this._mockApiRequest(packet);
+    this._sendApiRequest(packet);
   }
 
-  _mockApiRequest(packet) {
+  async _sendApiRequest(packet) {
     if (!navigator.onLine) {
       console.warn('[TELEMETRY] İnternet yok! Paket yedekleniyor...', packet.event_name);
       this._saveToOfflineBackup(packet);
@@ -179,11 +181,16 @@ class TelemetryService {
     }
 
     try {
-      const existingLogs = JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '[]');
-      existingLogs.push(packet);
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(existingLogs));
+      await api.post('/telemetry/batch', {
+          context: packet.context,
+          payload: packet.payload,
+          event_name: packet.event_name,
+          timestamp: packet.timestamp
+      });
+      console.log(`[TELEMETRY] ${packet.event_name} başarıyla gönderildi.`);
     } catch (e) {
-      console.error('[TELEMETRY] LocalStorage kayıt hatası:', e);
+      console.error('[TELEMETRY] API gönderim hatası:', e);
+      this._saveToOfflineBackup(packet); // Hata durumunda yedeğe al
     }
   }
 
@@ -194,15 +201,31 @@ class TelemetryService {
   }
 
   _listenForOnlineRecovery() {
-    window.addEventListener('online', () => {
+    window.addEventListener('online', async () => {
       console.log('[TELEMETRY] İnternet bağlantısı geri geldi. Yedekler kontrol ediliyor...');
       const backup = JSON.parse(localStorage.getItem(this.BACKUP_KEY) || '[]');
       
       if (backup.length > 0) {
         console.log(`[TELEMETRY] ${backup.length} adet yedek paket sunucuya gönderiliyor...`);
-        const existingLogs = JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '[]');
-        localStorage.setItem(this.STORAGE_KEY, JSON.stringify([...existingLogs, ...backup]));
-        localStorage.removeItem(this.BACKUP_KEY);
+        const remainingBackup = [];
+        for (const packet of backup) {
+           try {
+             await api.post('/telemetry/batch', {
+                 context: packet.context,
+                 payload: packet.payload,
+                 event_name: packet.event_name,
+                 timestamp: packet.timestamp
+             });
+           } catch(e) {
+             console.error('[TELEMETRY] Yedek gönderim hatası:', e);
+             remainingBackup.push(packet);
+           }
+        }
+        if (remainingBackup.length === 0) {
+          localStorage.removeItem(this.BACKUP_KEY);
+        } else {
+          localStorage.setItem(this.BACKUP_KEY, JSON.stringify(remainingBackup));
+        }
       }
     });
   }

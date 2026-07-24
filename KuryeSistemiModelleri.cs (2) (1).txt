@@ -1,0 +1,71 @@
+using System;
+using System.Collections.Generic;
+
+namespace KuryeTakip.Models
+{
+    // 1. tblKuryeler
+    public class Kurye
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Surname { get; set; } = string.Empty;
+        public string Sex { get; set; } = string.Empty; // "F" / "M"
+        public DateTime DOB { get; set; }
+        public bool Active { get; set; }
+        public string Phone { get; set; } = string.Empty; // Kurye iletişim nosu
+    }
+
+    // 2. tblTransferNoktaları
+    public class TransferNoktasi
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public double Lat { get; set; }
+        public double Lon { get; set; }
+        public string ContactPerson { get; set; } = string.Empty;
+        public string ContactPhone { get; set; } = string.Empty;
+        public string PointType { get; set; } = string.Empty; // "Hastane", "Laboratuvar"
+    }
+
+    // 3. tblTransferElemanları
+    public class TransferElemani
+    {
+        public int Id { get; set; }
+        public string QR { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public byte Severity { get; set; } // Mentörün istediği öncelik seviyesi (tinyint: 1, 2, 3)
+        public string StorageCondition { get; set; } = string.Empty; // "Oda Sıcaklığı", "Soğuk Zincir (+4°C)"
+    }
+
+    // 4. tblTransferOlayları
+    public class TransferOlayi
+    {
+        public int Id { get; set; }
+        public int TransferYapanKullaniciId { get; set; } // Kurye Id
+        public DateTime BaslangicZamani { get; set; }
+        public DateTime? BitisZamani { get; set; }
+        public int BaslangicNoktasiId { get; set; } // TransferNoktası Id
+        public int HedefNoktasiId { get; set; } // TransferNoktası Id
+        public string Status { get; set; } = string.Empty; // "Yolda", "Teslim Edildi"
+        public string? ReceivedBy { get; set; } // Teslim alan yetkili görevli
+        public string? Note { get; set; }
+    }
+
+    // 5. tblTransferOlaylarıTaşınanElemanlar
+    public class TransferOlayTasinanEleman
+    {
+        public int Id { get; set; }
+        public int TransferOlayId { get; set; }
+        public int TransferElemanId { get; set; }
+    }
+
+    // 6. tblTransferKordinatları
+    public class TransferKordinat
+    {
+        public int Id { get; set; }
+        public int TransferOlayId { get; set; }
+        public double Lat { get; set; }
+        public double Lon { get; set; }
+        public DateTime LocationDate { get; set; }
+    }
+}

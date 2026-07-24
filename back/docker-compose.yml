@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:18
+    container_name: kurye_db
+    environment:
+      POSTGRES_USER: kurye_admin
+      POSTGRES_PASSWORD: kurye_password
+      POSTGRES_DB: KuryeTakipDB
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+
+  api:
+    build: 
+      context: ./CourierDTS
+      dockerfile: Dockerfile
+    container_name: kurye_api
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=KuryeTakipDB;Username=kurye_admin;Password=kurye_password
+    ports:
+      - "5000:5000"
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:

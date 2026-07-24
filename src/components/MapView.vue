@@ -68,6 +68,13 @@ export default {
         this.isCameraLocked = false;
       }
     }); 
+
+    if (this.route) {
+      this.drawActiveRoute(this.route);
+    }
+    if (this.courierPosition) {
+      this.updateCourierPosition(this.courierPosition, null, this.isCameraLocked);
+    }
   },
   watch: {
     liveSelections: {
