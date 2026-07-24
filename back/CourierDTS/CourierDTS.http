@@ -1,6 +1,0 @@
-@CourierDTS_HostAddress = http://localhost:5267
-
-GET {{CourierDTS_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###

@@ -22,3 +22,18 @@ pnpm-debug.log*
 *.sln
 *.sw?
 .vs
+
+# Backend and Bot (Keep them local, not in Frontend Repo)
+back/
+simulator-bot/
+
+# Document files
+*.xlsx
+*.docx
+*.pdf
+*.txt
+*.md
+!README.md
+
+# Scripts
+create_excel.js
