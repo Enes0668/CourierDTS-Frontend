@@ -67,8 +67,8 @@ class TelemetryService {
   /**
    * Kurye hareket ettikçe çağrılır.
    */
-  addCoordinate(lat, lng) {
-    this.pathBuffer.push({ lat, lng });
+  addCoordinate(lat, lng, isFromMockProvider = false) {
+    this.pathBuffer.push({ lat, lng, isFromMockProvider, timestamp: new Date().toISOString() });
 
     // Sepete ilk veri düştüğünde 30 saniyelik zamanlayıcıyı başlat
     if (this.pathBuffer.length === 1) {

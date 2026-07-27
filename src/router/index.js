@@ -3,6 +3,8 @@ import LoginView from '../views/LoginView.vue'
 import CourierDashboard from '../views/CourierDashboard.vue'
 import AdminDashboard from '../views/AdminDashboard.vue'
 
+import SimulationPanel from '../views/SimulationPanel.vue'
+
 const routes = [
   {
     path: '/',
@@ -20,6 +22,12 @@ const routes = [
     name: 'admin',
     component: AdminDashboard,
     meta: { requiresAuth: true, role: 'admin' }
+  },
+  {
+    path: '/simulation',
+    name: 'simulation',
+    component: SimulationPanel
+    // Şimdilik test aracı olduğu için auth/role koruması eklemedik
   }
 ]
 
