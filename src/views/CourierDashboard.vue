@@ -1,7 +1,16 @@
 <template>
   <div class="courier-container">
     <div class="header">
-      <h2>Kurye Paneli</h2>
+      <div class="header-left">
+        <h2>Kurye Paneli</h2>
+        <div class="shift-toggle">
+          <label class="switch">
+            <input type="checkbox" v-model="isShiftActive" @change="toggleShift">
+            <span class="slider round"></span>
+          </label>
+          <span :class="{'active-text': isShiftActive}">{{ isShiftActive ? '🟢 Vardiya Açık' : '🔴 Vardiya Kapalı' }}</span>
+        </div>
+      </div>
       <button @click="logout" class="logout-btn">Çıkış Yap</button>
     </div>
 
@@ -78,9 +87,9 @@
         <button 
           @click="startJourney" 
           class="scan-btn"
-          :disabled="!selectedNextStop"
+          :disabled="!selectedNextStop || !isShiftActive"
         >
-          🏍️ Yola Çık
+          {{ isShiftActive ? '🏍️ Yola Çık' : 'Önce Vardiya Başlatın' }}
         </button>
       </div>
 
@@ -190,6 +199,7 @@ export default {
       currentLocation: null,
       selectedNextStop: '',
       isDeliveryStarted: false,
+      isShiftActive: false, // New property for Shift Status
       isOffline: !navigator.onLine,
       routeData: null,
       mockPosition: null,
@@ -262,6 +272,16 @@ export default {
   methods: {
     updateOnlineStatus() {
       this.isOffline = !navigator.onLine;
+    },
+    async toggleShift() {
+      try {
+        const courierId = localStorage.getItem('courier_id') || 1;
+        await dataService.setCourierActive(courierId, this.isShiftActive);
+        toast.success(this.isShiftActive ? 'Vardiya başlatıldı.' : 'Vardiya kapatıldı.');
+      } catch (error) {
+        this.isShiftActive = !this.isShiftActive; // revert on fail
+        toast.error('Vardiya durumu güncellenemedi.');
+      }
     },
     getLocationName(id) {
       const loc = this.locations.find(l => l.id === id);
@@ -412,12 +432,20 @@ export default {
       });
       this.closeModals();
     },
-    endJourneyAtStop() {
-      telemetry.completeDelivery(0);
-      
-      // Update current location to where we just arrived
-      this.currentLocation = this.selectedNextStop;
-      this.resetJourneyState();
+    async endJourneyAtStop() {
+      try {
+        if (this.currentJourneyId) {
+          await dataService.completeJourney(this.currentJourneyId);
+        }
+        
+        telemetry.completeDelivery(0);
+        
+        // Update current location to where we just arrived
+        this.currentLocation = this.selectedNextStop;
+        this.resetJourneyState();
+      } catch (error) {
+        toast.error("İşlem reddedildi. Üzerinizde bu durağa ait teslim edilmemiş paket olabilir.");
+      }
     },
     handleCancelChoice(isConfirmed) {
       if (isConfirmed) {
@@ -458,6 +486,65 @@ export default {
   border-bottom: 1px solid #333;
   padding-bottom: 10px;
 }
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.header h2 {
+  margin: 0;
+}
+.shift-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.active-text {
+  color: #4CAF50;
+  font-weight: bold;
+}
+/* The switch - the box around the slider */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 24px;
+}
+.switch input { 
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #f44336;
+  transition: .4s;
+}
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: .4s;
+}
+input:checked + .slider {
+  background-color: #4CAF50;
+}
+input:checked + .slider:before {
+  transform: translateX(26px);
+}
+.slider.round {
+  border-radius: 24px;
+}
+.slider.round:before {
+  border-radius: 50%;
+}
+
 .logout-btn {
   background-color: transparent;
   color: #ff5252;

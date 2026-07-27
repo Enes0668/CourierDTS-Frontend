@@ -52,10 +52,50 @@ export const dataService = {
     }
   },
 
+  async setCourierActive(courierId, isActive) {
+    try {
+      const response = await api.put('/courier/active', { courierId, isActive });
+      return response.data;
+    } catch (error) {
+      console.error("API Error (setCourierActive):", error);
+      throw error;
+    }
+  },
+
+  async completeJourney(journeyId) {
+    try {
+      const response = await api.put(`/journeys/${journeyId}/complete`);
+      return response.data;
+    } catch (error) {
+      console.error("API Error (completeJourney):", error);
+      throw error;
+    }
+  },
+
   async startJourney(courierId, startLocationId, endLocationId) {
     console.log("[Axios] startJourney çağrıldı");
     const response = await api.post('/journeys/start', { courierId, startLocationId, endLocationId });
     return response.data;
+  },
+
+  async getJourneys(courierId) {
+    try {
+      const response = await api.get(`/journeys?courierId=${courierId}`);
+      return response.data;
+    } catch (error) {
+      console.error("API Error (getJourneys):", error);
+      return [];
+    }
+  },
+
+  async getTelemetry(journeyId) {
+    try {
+      const response = await api.get(`/telemetry?journeyId=${journeyId}`);
+      return response.data;
+    } catch (error) {
+      console.error("API Error (getTelemetry):", error);
+      return [];
+    }
   },
 
   async syncActions(journeyId, actions) {

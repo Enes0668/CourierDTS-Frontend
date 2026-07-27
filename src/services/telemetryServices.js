@@ -25,7 +25,7 @@ class TelemetryService {
     // Sistemin o anki kimlik kartı
     this.context = {
       courier_id: null,
-      delivery_id: null,
+      journey_id: null,
       session_id: crypto.randomUUID() // Benzersiz oturum kimliği oluşturur
     };
 
@@ -37,9 +37,9 @@ class TelemetryService {
     this._listenForOnlineRecovery();
   }
 
-  setContext(courierId, deliveryId) {
+  setContext(courierId, journeyId) {
     this.context.courier_id = courierId;
-    this.context.delivery_id = deliveryId;
+    this.context.journey_id = journeyId;
     console.log('[TELEMETRY] Kimlik tanımlandı:', this.context);
   }
 

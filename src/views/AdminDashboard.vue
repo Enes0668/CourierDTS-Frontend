@@ -60,21 +60,42 @@
       <!-- Unassigned Pool -->
       <div class="section-block package-form">
         <h3>📥 Atanmamış Paketler (Havuz)</h3>
-        <div v-if="pendingPool.length === 0" class="no-data">Havuzda bekleyen paket yok.</div>
         
-        <div class="pool-list">
-          <div v-for="pkg in pendingPool" :key="pkg.id" class="pool-item">
+        <div class="input-group">
+          <input type="text" v-model="poolFilterText" placeholder="Havuzda ara (Barkod, İçerik...)" />
+        </div>
+
+        <div v-if="filteredPendingPool.length === 0" class="no-data">
+          Filtreye uygun atanmamış paket yok.
+        </div>
+        
+        <div v-else>
+          <div class="pool-select-all">
+            <input type="checkbox" id="selectAll" @change="toggleSelectAllFiltered" :checked="isAllFilteredSelected" />
+            <label for="selectAll">Tümünü Seç ({{ filteredPendingPool.length }} Paket)</label>
+          </div>
+          
+          <div class="pool-list">
+            <div v-for="pkg in filteredPendingPool" :key="pkg.id" class="pool-item">
             <input type="checkbox" :value="pkg.id" v-model="selectedPoolPackages" />
             <div class="pool-info">
               <strong>{{ pkg.barcode || 'İsimsiz' }}</strong> (P{{ pkg.priority }})
               <div class="pool-desc">{{ pkg.description }}</div>
             </div>
           </div>
+          </div>
         </div>
 
-        <button @click="assignSelectedToCourier" class="assign-btn" :disabled="selectedPoolPackages.length === 0">
-          Seçili Kuryeye Ata ({{ selectedPoolPackages.length }})
-        </button>
+        <div class="assignment-actions" style="margin-top: 15px;">
+          <select v-model="selectedAssignCourierId" class="full-width-select">
+            <option value="0">🌍 Genel Atama (Tüm Kuryeler - Havuz)</option>
+            <option v-for="c in couriers" :key="c.id" :value="c.id">🛵 {{ c.name }}</option>
+          </select>
+
+          <button @click="assignSelectedToCourier" class="assign-btn" :disabled="selectedPoolPackages.length === 0">
+            Seçilenleri Ata ({{ selectedPoolPackages.length }})
+          </button>
+        </div>
       </div>
 
       <!-- Create New Package (To Pool) -->
@@ -82,12 +103,12 @@
         <h3>📦 Sisteme Yeni Paket Ekle</h3>
         
         <div class="input-group">
-          <label>Barkod (Opsiyonel)</label>
+          <label>Barkod (Opsiyonel - Boşsa sistem üretir)</label>
           <input type="text" v-model="newPkg.barcode" placeholder="Örn: HAST-1234">
         </div>
 
         <div class="input-group">
-          <label>İçerik (Açıklama)</label>
+          <label>İçerik / Başlık</label>
           <input type="text" v-model="newPkg.description" placeholder="Örn: Kan Örneği">
         </div>
 
@@ -133,7 +154,7 @@
       <div class="map-collapsible-content">
         <div class="map-container">
           <!-- In a real scenario, mockAdminPosition would be fetched from Backend based on selectedCourierId -->
-          <MapView :courierPosition="mockAdminPosition" />
+          <MapView :courierPosition="mockAdminPosition" :telemetryRoute="activeCourierRoute" />
         </div>
 
         <!-- Recent Assignments Log (Optional visual feedback) -->
@@ -164,7 +185,9 @@ export default {
       couriers: [],
       packages: [],
       selectedCourierId: 1,
+      selectedAssignCourierId: '0', // 0 means General
       selectedPoolPackages: [],
+      poolFilterText: '',
       newPkg: {
         barcode: '',
         description: '',
@@ -178,12 +201,26 @@ export default {
       // Telemetry Data
       lastUpdate: 'Henüz güncellenmedi',
       pollingTimer: null,
-      mockAdminPosition: { lat: 39.9208, lng: 32.8541 } // Mock default position
+      mockAdminPosition: { lat: 39.9208, lng: 32.8541 }, // Mock default position
+      activeCourierRoute: null
     }
   },
   computed: {
     pendingPool() {
       return this.packages.filter(p => !p.assignedCourierId || p.assignedCourierId === '');
+    },
+    filteredPendingPool() {
+      const lowerFilter = this.poolFilterText.toLowerCase();
+      if (!lowerFilter) return this.pendingPool;
+      return this.pendingPool.filter(p => 
+        (p.barcode && p.barcode.toLowerCase().includes(lowerFilter)) ||
+        (p.description && p.description.toLowerCase().includes(lowerFilter))
+      );
+    },
+    isAllFilteredSelected() {
+      if (this.filteredPendingPool.length === 0) return false;
+      // Are all filtered items inside selectedPoolPackages?
+      return this.filteredPendingPool.every(p => this.selectedPoolPackages.includes(p.id));
     },
     courierPackagesInTransit() {
       return this.packages.filter(p => p.assignedCourierId === this.selectedCourierId && p.status === 'InTransit');
@@ -210,6 +247,21 @@ export default {
     }
   },
   methods: {
+    toggleSelectAllFiltered(event) {
+      const isChecked = event.target.checked;
+      if (isChecked) {
+        // Add all filtered items that are not already selected
+        this.filteredPendingPool.forEach(p => {
+          if (!this.selectedPoolPackages.includes(p.id)) {
+            this.selectedPoolPackages.push(p.id);
+          }
+        });
+      } else {
+        // Remove all filtered items from selectedPoolPackages
+        const filteredIds = this.filteredPendingPool.map(p => p.id);
+        this.selectedPoolPackages = this.selectedPoolPackages.filter(id => !filteredIds.includes(id));
+      }
+    },
     async fetchData() {
       // Periyodik olarak paketleri (ve kurye konumlarını) yenile
       this.packages = await dataService.getAllPackages();
@@ -231,6 +283,18 @@ export default {
           if (selected && selected.lat && selected.lng) {
              this.mockAdminPosition = { lat: selected.lat, lng: selected.lng };
           }
+
+          // Fetch active route for selected courier
+          const journeys = await dataService.getJourneys(this.selectedCourierId);
+          // Assuming backend returns an array and active journey is the latest or has status 'Active'
+          const activeJourney = journeys.find(j => j.status === 'Active') || journeys[journeys.length - 1];
+          if (activeJourney) {
+            const telemetryData = await dataService.getTelemetry(activeJourney.id);
+            this.activeCourierRoute = telemetryData;
+          } else {
+            this.activeCourierRoute = null;
+          }
+
         } catch (error) {
           console.warn("Canlı izleme verisi çekilemedi (Simülasyon devam ediyor).");
         }
@@ -240,17 +304,24 @@ export default {
       poll();
     },
     async assignSelectedToCourier() {
-      const courier = this.couriers.find(c => c.id === this.selectedCourierId);
-      if(!courier) return;
+      let courierName = "Genel Havuz (Tüm Kuryeler)";
+      let assignId = parseInt(this.selectedAssignCourierId);
+      
+      if (assignId !== 0) {
+        const courier = this.couriers.find(c => c.id === assignId);
+        if(!courier) return;
+        courierName = courier.name;
+      }
 
       try {
         for (const pkgId of this.selectedPoolPackages) {
-          await dataService.assignPackage(pkgId, this.selectedCourierId);
+          // Send 0 for general assignment, or specific courier ID
+          await dataService.assignPackage(pkgId, assignId);
           const pkg = this.packages.find(p => p.id === pkgId);
           if (pkg) this.recentPackages.unshift(pkg);
         }
         
-        toast.success(`${this.selectedPoolPackages.length} paket ${courier.name} adlı kuryeye atandı!`);
+        toast.success(`${this.selectedPoolPackages.length} paket ${courierName} hedefine atandı!`);
         this.selectedPoolPackages = []; // Reset selection
         
         // Atamalar bittikten sonra en güncel listeyi sunucudan çekiyoruz

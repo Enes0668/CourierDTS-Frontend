@@ -41,6 +41,7 @@ export default {
   name: 'MapView',
   props: {
     route: Object,
+    telemetryRoute: Array,
     liveSelections: Object,
     courierPosition: Object,
     isDelivered: Boolean
@@ -55,6 +56,7 @@ export default {
     this.map = null;
     this.routeLayerGroup = null;
     this.previewLayerGroup = null;
+    this.telemetryLayerGroup = null;
     this.currentAngle = 0;
     this.previousTargetAngle = null;
     this.courierMarker = null;
@@ -72,6 +74,9 @@ export default {
     if (this.route) {
       this.drawActiveRoute(this.route);
     }
+    if (this.telemetryRoute) {
+      this.drawTelemetryRoute(this.telemetryRoute);
+    }
     if (this.courierPosition) {
       this.updateCourierPosition(this.courierPosition, null, this.isCameraLocked);
     }
@@ -85,6 +90,9 @@ export default {
     },
     route(newRoute) {
       this.drawActiveRoute(newRoute);
+    },
+    telemetryRoute(newRoute) {
+      this.drawTelemetryRoute(newRoute);
     },
     courierPosition(newPos, oldPos) {
       this.updateCourierPosition(newPos, oldPos, this.isCameraLocked);
@@ -107,6 +115,21 @@ export default {
 
       this.routeLayerGroup = L.layerGroup().addTo(this.map);
       this.previewLayerGroup = L.layerGroup().addTo(this.map);
+      this.telemetryLayerGroup = L.layerGroup().addTo(this.map);
+    },
+    drawTelemetryRoute(telemetryPoints) {
+      this.telemetryLayerGroup.clearLayers();
+      if (!telemetryPoints || telemetryPoints.length === 0) return;
+
+      const pathLatLngs = telemetryPoints.map(coord => [coord.lat, coord.lng]);
+      const polyline = L.polyline(pathLatLngs, {
+        color: '#ff5722', // turuncu
+        weight: 4,
+        opacity: 0.8,
+        dashArray: '10, 10'
+      }).addTo(this.telemetryLayerGroup);
+      
+      this.map.fitBounds(polyline.getBounds(), { padding: MAP_SETTINGS.BOUNDS_PADDING });
     },
     drawPreview(selections) {
       this.previewLayerGroup.clearLayers();
