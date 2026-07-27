@@ -143,14 +143,7 @@
       </div>
 
       <div class="action-area" style="width: 100%;">
-        <button 
-          v-if="!isDelivered && !showConfirmation" 
-          class="skip-btn" 
-          @click="markAsArrived"
-        >
-          📍 Hedefe Ulaştım
-        </button>
-
+        <!-- Otomatik varış algılandığı için 'Hedefe Ulaştım' butonu kaldırıldı -->
         <button 
           v-if="!showConfirmation"
           class="cancel-btn" 
@@ -178,6 +171,7 @@ import { dataService } from '../services/dataService';
 import { telemetry } from '../services/telemetryServices';
 import { actionQueue } from '../services/actionQueueService';
 import { toast } from '../services/toast';
+import { calculateDistance } from '../utils/geoMath';
 
 export default {
   name: 'CourierDashboard',
@@ -232,8 +226,21 @@ export default {
     // Simülasyon verilerini dinle
     this.simChannel = new BroadcastChannel('gps_simulation');
     this.simChannel.onmessage = (event) => {
-      if(event.data.type === 'GPS_UPDATE' && this.isDeliveryStarted) {
+      if(event.data.type === 'GPS_UPDATE' && this.isDeliveryStarted && !this.isDelivered) {
         this.mockPosition = { lat: event.data.lat, lng: event.data.lng };
+        
+        // Hedefe olan mesafeyi hesapla
+        if (this.selectedNextStop) {
+          const targetLat = this.selectedNextStop.latitude || this.selectedNextStop.lat;
+          const targetLng = this.selectedNextStop.longitude || this.selectedNextStop.lng;
+          
+          const dist = calculateDistance(event.data.lat, event.data.lng, targetLat, targetLng);
+          
+          // Eğer hedefe 50 metreden daha yakınsa, otomatik varış
+          if (dist < 50) {
+             this.markAsArrived();
+          }
+        }
       }
     };
   },
