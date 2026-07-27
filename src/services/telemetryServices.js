@@ -8,6 +8,15 @@ import api from '@/api/index.js';
 
 class TelemetryService {
   constructor() {
+    this.pathBuffer = [];
+    this.bufferTimer = null;
+    this.isTracking = false;
+    this.courierId = null;
+    this.journeyId = null;
+    
+    // Simülasyon paneli ile Courier dashboard arası iletişim
+    this.simChannel = new BroadcastChannel('gps_simulation');
+
     this.STORAGE_KEY = 'telemetry_logs';
     this.BACKUP_KEY = 'telemetry_offline_backup';
     this.CHUNK_SIZE = 50; // Sepet kapasitesi (Koordinat sayısı)
@@ -69,6 +78,9 @@ class TelemetryService {
    */
   addCoordinate(lat, lng, isFromMockProvider = false) {
     this.pathBuffer.push({ lat, lng, isFromMockProvider, timestamp: new Date().toISOString() });
+    
+    // Simülasyon arayüzünün güncellenmesi için kanala yayın yap
+    this.simChannel.postMessage({ type: 'GPS_UPDATE', lat, lng });
 
     // Sepete ilk veri düştüğünde 30 saniyelik zamanlayıcıyı başlat
     if (this.pathBuffer.length === 1) {

@@ -228,10 +228,21 @@ export default {
     this.packages = await dataService.getMyPackages(courierId);
     window.addEventListener('offline', this.updateOnlineStatus);
     window.addEventListener('online', this.updateOnlineStatus);
+
+    // Simülasyon verilerini dinle
+    this.simChannel = new BroadcastChannel('gps_simulation');
+    this.simChannel.onmessage = (event) => {
+      if(event.data.type === 'GPS_UPDATE' && this.isDeliveryStarted) {
+        this.mockPosition = { lat: event.data.lat, lng: event.data.lng };
+      }
+    };
   },
   beforeUnmount() {
     window.removeEventListener('offline', this.updateOnlineStatus);
     window.removeEventListener('online', this.updateOnlineStatus);
+    if (this.simChannel) {
+      this.simChannel.close();
+    }
   },
   methods: {
     updateOnlineStatus() {
@@ -260,7 +271,7 @@ export default {
         this.isDelivered = false;
         this.showConfirmation = false;
         
-        const courierId = localStorage.getItem('courier_id') || 5;
+        const courierId = localStorage.getItem('courier_id') || 1;
         
         try {
           const resp = await dataService.startJourney(
@@ -276,6 +287,33 @@ export default {
         
         telemetry.setContext(courierId, this.currentJourneyId);
         telemetry.startDelivery(this.currentLocation.name, this.selectedNextStop.name, 0, []);
+
+        // Haritayı çizmek için OSRM'den rotayı al
+        this.routeData = {
+          start: this.currentLocation,
+          end: this.selectedNextStop,
+          coordinates: []
+        };
+        
+        try {
+          const startLng = this.currentLocation.longitude || this.currentLocation.lng;
+          const startLat = this.currentLocation.latitude || this.currentLocation.lat;
+          const endLng = this.selectedNextStop.longitude || this.selectedNextStop.lng;
+          const endLat = this.selectedNextStop.latitude || this.selectedNextStop.lat;
+          
+          const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
+          const res = await fetch(osrmUrl);
+          const data = await res.json();
+          if(data.routes && data.routes.length > 0) {
+              this.routeData.coordinates = data.routes[0].geometry.coordinates.map(c => ({ lat: c[1], lng: c[0] }));
+          }
+        } catch(e) { console.error("OSRM Hatası", e); }
+        
+        // Kuryeyi başlangıç noktasına yerleştir
+        this.mockPosition = { 
+          lat: this.currentLocation.latitude || this.currentLocation.lat, 
+          lng: this.currentLocation.longitude || this.currentLocation.lng 
+        };
 
       } catch (error) {
         console.error("API Hatası:", error);
