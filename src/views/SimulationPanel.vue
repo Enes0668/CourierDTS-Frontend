@@ -37,13 +37,11 @@
       </div>
       
       <div class="input-row">
-        <label>Hız (Nokta/Saniye):</label>
-        <select v-model="intervalMs">
-          <option :value="2000">Yavaş (2 saniyede 1 nokta)</option>
-          <option :value="1000">Normal (Saniyede 1 nokta)</option>
-          <option :value="500">Hızlı (Saniyede 2 nokta)</option>
-          <option :value="100">Çok Hızlı (Saniyede 10 nokta)</option>
-        </select>
+        <label>Hız Çarpanı ({{ speedMultiplier }}x):</label>
+        <div style="flex: 1; display: flex; align-items: center; gap: 10px;">
+          <input type="range" min="1" max="100" v-model.number="speedMultiplier" style="flex: 1;" />
+          <input type="number" min="1" max="500" v-model.number="speedMultiplier" style="width: 70px; flex: none;" />
+        </div>
       </div>
       
       <div class="actions">
@@ -80,7 +78,7 @@ export default {
       
       courierId: 1,
       journeyId: 999,
-      intervalMs: 1000,
+      speedMultiplier: 1,
       
       isSimulating: false,
       currentStep: 0,
@@ -98,10 +96,17 @@ export default {
       this.addLog("HATA: Lokasyonlar çekilemedi!");
     }
   },
+  computed: {
+    intervalMs() {
+      // 1x = 1000ms (saniyede 1 nokta)
+      // 100x = 10ms
+      return Math.max(10, 1000 / this.speedMultiplier);
+    }
+  },
   watch: {
-    intervalMs(newVal) {
+    speedMultiplier(newVal) {
       if (this.isSimulating) {
-        this.addLog(`Hız anlık olarak değiştirildi: ${newVal}ms`);
+        this.addLog(`Hız çarpanı anlık olarak değiştirildi: ${newVal}x`);
         clearInterval(this.timer);
         this.runSimulationLoop();
       }
