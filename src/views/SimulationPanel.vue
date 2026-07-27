@@ -98,6 +98,15 @@ export default {
       this.addLog("HATA: Lokasyonlar çekilemedi!");
     }
   },
+  watch: {
+    intervalMs(newVal) {
+      if (this.isSimulating) {
+        this.addLog(`Hız anlık olarak değiştirildi: ${newVal}ms`);
+        clearInterval(this.timer);
+        this.runSimulationLoop();
+      }
+    }
+  },
   methods: {
     addLog(msg) {
       this.logs.unshift(`[${new Date().toLocaleTimeString()}] ${msg}`);
