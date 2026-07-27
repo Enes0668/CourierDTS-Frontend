@@ -290,8 +290,16 @@ export default {
 
         // Haritayı çizmek için OSRM'den rotayı al
         this.routeData = {
-          start: this.currentLocation,
-          end: this.selectedNextStop,
+          start: {
+            ...this.currentLocation,
+            lat: this.currentLocation.latitude || this.currentLocation.lat,
+            lng: this.currentLocation.longitude || this.currentLocation.lng
+          },
+          end: {
+            ...this.selectedNextStop,
+            lat: this.selectedNextStop.latitude || this.selectedNextStop.lat,
+            lng: this.selectedNextStop.longitude || this.selectedNextStop.lng
+          },
           coordinates: []
         };
         
