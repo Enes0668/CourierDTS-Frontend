@@ -143,7 +143,14 @@
       </div>
 
       <div class="action-area" style="width: 100%;">
-        <!-- Otomatik varış algılandığı için 'Hedefe Ulaştım' butonu kaldırıldı -->
+        <button 
+          v-if="isNearTarget && !isDelivered && !showConfirmation" 
+          class="skip-btn" 
+          @click="markAsArrived"
+        >
+          📍 Hedefe Ulaştım
+        </button>
+
         <button 
           v-if="!showConfirmation"
           class="cancel-btn" 
@@ -188,6 +195,7 @@ export default {
       mockPosition: null,
       showConfirmation: false,
       isDelivered: false,
+      isNearTarget: false,
       
       showPickupModal: false,
       showDropoffModal: false,
@@ -236,9 +244,9 @@ export default {
           
           const dist = calculateDistance(event.data.lat, event.data.lng, targetLat, targetLng);
           
-          // Eğer hedefe 100 metreden daha yakınsa, otomatik varış
+          // Eğer hedefe 100 metreden daha yakınsa butonu göster
           if (dist < 100) {
-             this.markAsArrived();
+             this.isNearTarget = true;
           }
         }
       }
@@ -425,6 +433,7 @@ export default {
       this.mockPosition = null;
       this.selectedNextStop = '';
       this.actionNotes = "";
+      this.isNearTarget = false;
     },
     logout() {
       localStorage.clear();
