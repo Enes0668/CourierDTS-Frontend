@@ -52,9 +52,8 @@ export default {
       this.isLoading = true;
       
       try {
-        // Enes'in birleştirdiği unified Users login ucunu kullanıyoruz
-        // Eğer uç adı farklıysa (örn: /auth/login) burayı değiştirebilirsiniz.
-        const response = await api.post('/users/login', {
+        // Enes'in belirlediği uç: /admin/login
+        const response = await api.post('/admin/login', {
           name: this.username,
           password: this.password
         });
