@@ -236,8 +236,8 @@ export default {
           
           const dist = calculateDistance(event.data.lat, event.data.lng, targetLat, targetLng);
           
-          // Eğer hedefe 50 metreden daha yakınsa, otomatik varış
-          if (dist < 50) {
+          // Eğer hedefe 100 metreden daha yakınsa, otomatik varış
+          if (dist < 100) {
              this.markAsArrived();
           }
         }
