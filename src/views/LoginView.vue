@@ -6,12 +6,12 @@
       
       <form @submit.prevent="handleLogin">
         <div class="form-group">
-          <label for="username">Kullanıcı Adı / Kurye ID</label>
+          <label for="username">Kullanıcı Adı / ID</label>
           <input 
             type="text" 
             id="username" 
             v-model="username" 
-            placeholder="örn: SIM_COURIER_776"
+            placeholder="Kullanıcı Adınız"
             required
           />
         </div>
@@ -27,15 +27,6 @@
           />
         </div>
 
-        <div class="role-selector">
-          <label class="radio-label">
-            <input type="radio" value="courier" v-model="role" /> Kurye
-          </label>
-          <label class="radio-label">
-            <input type="radio" value="admin" v-model="role" /> Yönetici
-          </label>
-        </div>
-
         <button type="submit" class="primary-btn" :disabled="isLoading">
           {{ isLoading ? 'Giriş Yapılıyor...' : 'Giriş Yap' }}
         </button>
@@ -45,9 +36,6 @@
 </template>
 
 <script>
-// Mocking Capacitor Device API for now
-// import { Device } from '@capacitor/device';
-
 import api from '../api/index';
 
 export default {
@@ -56,7 +44,6 @@ export default {
     return {
       username: '',
       password: '',
-      role: 'courier', // varsayılan
       isLoading: false
     }
   },
@@ -65,27 +52,24 @@ export default {
       this.isLoading = true;
       
       try {
-        if (this.role === 'admin') {
-          // Gerçek Admin Login API Çağrısı
-          const response = await api.post('/admin/login', {
-            name: this.username,
-            password: this.password
-          });
-          
-          localStorage.setItem('jwt_token', response.data.token);
+        // Enes'in birleştirdiği unified Users login ucunu kullanıyoruz
+        // Eğer uç adı farklıysa (örn: /auth/login) burayı değiştirebilirsiniz.
+        const response = await api.post('/users/login', {
+          name: this.username,
+          password: this.password
+        });
+        
+        const data = response.data;
+        localStorage.setItem('jwt_token', data.token);
+        
+        // Backend'den dönen Role'e göre yönlendirme (0: Admin, 1: Kurye)
+        if (data.role === 0) {
           localStorage.setItem('user_role', 'admin');
-          localStorage.setItem('admin_id', response.data.adminId);
+          localStorage.setItem('admin_id', data.id || data.adminId || 0);
           this.$router.push('/admin');
         } else {
-          // Gerçek Kurye Login API Çağrısı
-          const response = await api.post('/courier/login', {
-            name: this.username,
-            password: this.password
-          });
-          
-          localStorage.setItem('jwt_token', response.data.token);
           localStorage.setItem('user_role', 'courier');
-          localStorage.setItem('courier_id', response.data.courierId);
+          localStorage.setItem('courier_id', data.id || data.courierId || 1);
           this.$router.push('/courier');
         }
       } catch (error) {
