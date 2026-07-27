@@ -295,34 +295,46 @@ export default {
         telemetry.setContext(courierId, this.currentJourneyId);
         telemetry.startDelivery(this.currentLocation.name, this.selectedNextStop.name, 0, []);
 
-        // Haritayı çizmek için OSRM'den rotayı al
-        this.routeData = {
-          start: {
-            ...this.currentLocation,
-            lat: this.currentLocation.latitude || this.currentLocation.lat,
-            lng: this.currentLocation.longitude || this.currentLocation.lng
-          },
-          end: {
-            ...this.selectedNextStop,
-            lat: this.selectedNextStop.latitude || this.selectedNextStop.lat,
-            lng: this.selectedNextStop.longitude || this.selectedNextStop.lng
-          },
-          coordinates: []
-        };
-        
         try {
           const startLng = this.currentLocation.longitude || this.currentLocation.lng;
           const startLat = this.currentLocation.latitude || this.currentLocation.lat;
           const endLng = this.selectedNextStop.longitude || this.selectedNextStop.lng;
           const endLat = this.selectedNextStop.latitude || this.selectedNextStop.lat;
           
+          let coordinates = [];
           const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
           const res = await fetch(osrmUrl);
           const data = await res.json();
+          
           if(data.routes && data.routes.length > 0) {
-              this.routeData.coordinates = data.routes[0].geometry.coordinates.map(c => ({ lat: c[1], lng: c[0] }));
+              coordinates = data.routes[0].geometry.coordinates.map(c => ({ lat: c[1], lng: c[0] }));
           }
-        } catch(e) { console.error("OSRM Hatası", e); }
+          
+          // OSRM verisi geldikten sonra routeData'yı TEK SEFERDE atıyoruz.
+          // Bu sayede MapView içindeki "watch" mekanizması tetiklenir.
+          this.routeData = {
+            start: {
+              ...this.currentLocation,
+              lat: startLat,
+              lng: startLng
+            },
+            end: {
+              ...this.selectedNextStop,
+              lat: endLat,
+              lng: endLng
+            },
+            coordinates: coordinates
+          };
+          
+        } catch(e) { 
+          console.error("OSRM Hatası", e); 
+          // Hata durumunda boş çizgi atayalım ki harita çökmesin
+          this.routeData = {
+            start: { lat: this.currentLocation.latitude || this.currentLocation.lat, lng: this.currentLocation.longitude || this.currentLocation.lng },
+            end: { lat: this.selectedNextStop.latitude || this.selectedNextStop.lat, lng: this.selectedNextStop.longitude || this.selectedNextStop.lng },
+            coordinates: []
+          };
+        }
         
         // Kuryeyi başlangıç noktasına yerleştir
         this.mockPosition = { 
