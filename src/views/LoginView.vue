@@ -68,24 +68,24 @@ export default {
         if (this.role === 'admin') {
           // Gerçek Admin Login API Çağrısı
           const response = await api.post('/admin/login', {
-            name: this.username,
+            username: this.username,
             password: this.password
           });
           
           localStorage.setItem('jwt_token', response.data.token);
           localStorage.setItem('user_role', 'admin');
-          localStorage.setItem('admin_id', response.data.adminId);
+          localStorage.setItem('admin_id', response.data.adminId || response.data.id);
           this.$router.push('/admin');
         } else {
           // Gerçek Kurye Login API Çağrısı
           const response = await api.post('/courier/login', {
-            name: this.username,
+            username: this.username,
             password: this.password
           });
           
           localStorage.setItem('jwt_token', response.data.token);
           localStorage.setItem('user_role', 'courier');
-          localStorage.setItem('courier_id', response.data.courierId);
+          localStorage.setItem('courier_id', response.data.courierId || response.data.id);
           this.$router.push('/courier');
         }
       } catch (error) {
