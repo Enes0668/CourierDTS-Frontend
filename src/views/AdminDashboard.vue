@@ -1,65 +1,105 @@
 <template>
-  <div class="admin-container">
-    <div class="sidebar">
+  <div class="admin-dashboard-modern">
+    <!-- Top Navigation Tabs -->
+    <div class="top-nav-tabs">
       <h2>👑 Yönetici Paneli</h2>
-      
-      <!-- Courier List -->
-      <div class="section-block">
-        <h3>Sahadaki Kuryeler</h3>
-        <ul class="courier-list">
-          <li 
-            v-for="courier in couriers" 
-            :key="courier.id" 
-            :class="{ active: selectedCourierId === courier.id }"
-            @click="selectedCourierId = courier.id"
-          >
-            🛵 {{ courier.name }}
-          </li>
-        </ul>
+      <div class="tabs-container">
+        <button :class="{ active: activeTab === 'live' }" @click="setTab('live')">📍 Canlı İzleme</button>
+        <button :class="{ active: activeTab === 'pool' }" @click="setTab('pool')">📦 Paket Havuzu</button>
+        <button :class="{ active: activeTab === 'new' }" @click="setTab('new')">➕ Yeni Paket</button>
       </div>
+      <button @click="logout" class="logout-btn-top">Güvenli Çıkış</button>
+    </div>
 
-      <!-- Courier's Current Packages -->
-      <div class="section-block package-form">
-        <h3>🎒 Kuryedeki Paketler</h3>
+    <!-- TAB: CANLI İZLEME -->
+    <div class="tab-content live-tab" v-if="activeTab === 'live'">
+      <div class="sidebar">
+        <!-- Courier List -->
+        <div class="section-block">
+          <h3>Sahadaki Kuryeler</h3>
+          <ul class="courier-list">
+            <li 
+              v-for="courier in couriers" 
+              :key="courier.id" 
+              :class="{ active: selectedCourierId === courier.id }"
+              @click="selectedCourierId = courier.id"
+            >
+              🛵 {{ courier.name }}
+            </li>
+          </ul>
+        </div>
         
-        <div v-if="courierPackagesInTransit.length === 0 && courierPackagesPending.length === 0" class="no-data">
-          Bu kuryeye atanmış paket yok.
-        </div>
+        <!-- Courier's Current Packages -->
+        <div class="section-block package-form">
+          <h3>🎒 Kuryedeki Paketler</h3>
+          
+          <div v-if="courierPackagesInTransit.length === 0 && courierPackagesPending.length === 0" class="no-data">
+            Bu kuryeye atanmış paket yok.
+          </div>
 
-        <div v-if="courierPackagesInTransit.length > 0">
-          <h4 class="sub-heading">🚚 Üzerindeki (Alınmış) Paketler</h4>
-          <ul class="detailed-pkg-list transit-list">
-            <li v-for="pkg in courierPackagesInTransit" :key="pkg.id">
-              <div class="pkg-main">
-                <strong>{{ pkg.barcode || 'İsimsiz' }}</strong> (P{{ pkg.priority }})
-              </div>
-              <div class="pkg-sub">
-                {{ pkg.description }}<br>
-                <small>Alış: {{ getLocationName(pkg.pickupLocId) }} ➔ Hedef: {{ getLocationName(pkg.dropoffLocId) }}</small>
-              </div>
-            </li>
-          </ul>
-        </div>
+          <div v-if="courierPackagesInTransit.length > 0">
+            <h4 class="sub-heading">🚚 Üzerindeki (Alınmış) Paketler</h4>
+            <ul class="detailed-pkg-list transit-list">
+              <li v-for="pkg in courierPackagesInTransit" :key="pkg.id">
+                <div class="pkg-main">
+                  <strong>{{ pkg.barcode || 'İsimsiz' }}</strong> (P{{ pkg.priority }})
+                </div>
+                <div class="pkg-sub">
+                  {{ pkg.description }}<br>
+                  <small>Alış: {{ getLocationName(pkg.pickupLocId) }} ➔ Hedef: {{ getLocationName(pkg.dropoffLocId) }}</small>
+                </div>
+              </li>
+            </ul>
+          </div>
 
-        <div v-if="courierPackagesPending.length > 0">
-          <h4 class="sub-heading">⏳ Atanmış Ancak Alınmamış</h4>
-          <ul class="detailed-pkg-list pending-list">
-            <li v-for="pkg in courierPackagesPending" :key="pkg.id">
-              <div class="pkg-main">
-                <strong>{{ pkg.barcode || 'İsimsiz' }}</strong> (P{{ pkg.priority }})
-              </div>
-              <div class="pkg-sub">
-                {{ pkg.description }}<br>
-                <small>Alış: {{ getLocationName(pkg.pickupLocId) }} ➔ Hedef: {{ getLocationName(pkg.dropoffLocId) }}</small>
-              </div>
-            </li>
-          </ul>
+          <div v-if="courierPackagesPending.length > 0">
+            <h4 class="sub-heading">⏳ Atanmış Ancak Alınmamış</h4>
+            <ul class="detailed-pkg-list pending-list">
+              <li v-for="pkg in courierPackagesPending" :key="pkg.id">
+                <div class="pkg-main">
+                  <strong>{{ pkg.barcode || 'İsimsiz' }}</strong> (P{{ pkg.priority }})
+                </div>
+                <div class="pkg-sub">
+                  {{ pkg.description }}<br>
+                  <small>Alış: {{ getLocationName(pkg.pickupLocId) }} ➔ Hedef: {{ getLocationName(pkg.dropoffLocId) }}</small>
+                </div>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
 
-      <!-- Unassigned Pool -->
-      <div class="section-block package-form">
-        <h3>📥 Atanmamış Paketler (Havuz)</h3>
+      <!-- Map & Telemetry Area -->
+      <div class="map-area" :class="{ 'collapsed-mobile': !isMapVisibleOnMobile }">
+        <div class="map-header" @click="isMapVisibleOnMobile = !isMapVisibleOnMobile">
+          <div class="map-header-title">
+            <h3>📍 Canlı Kurye İzleme & Rota Arama</h3>
+            <span class="polling-badge">🔴 Canlı (Son Güncelleme: {{ lastUpdate }})</span>
+          </div>
+          
+          <div class="search-bar" @click.stop>
+            <input type="text" v-model="barcodeSearch" placeholder="Barkod ile ara (Geçmiş Rota)" @keyup.enter="searchTourHistory" />
+            <button @click="searchTourHistory">Ara</button>
+          </div>
+          <span class="mobile-toggle-icon">{{ isMapVisibleOnMobile ? '🔽' : '▶️' }}</span>
+        </div>
+        
+        <div class="map-collapsible-content">
+          <div class="map-container">
+            <!-- Harita Bileşeni -->
+            <MapView :courierPosition="mockAdminPosition" :telemetryRoute="activeCourierRoute" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: PAKET HAVUZU -->
+    <div class="tab-content pool-tab" v-if="activeTab === 'pool'">
+      <div class="section-block package-form centered-panel full-width">
+        <div class="panel-header-flex">
+          <h3>📥 Atanmamış Paketler (Havuz)</h3>
+          <button @click="loadPoolData" class="refresh-btn">🔄 Yenile</button>
+        </div>
         
         <div class="input-group">
           <input type="text" v-model="poolFilterText" placeholder="Havuzda ara (Barkod, İçerik...)" />
@@ -75,7 +115,7 @@
             <label for="selectAll">Tümünü Seç ({{ filteredPendingPool.length }} Paket)</label>
           </div>
           
-          <div class="pool-list">
+          <div class="pool-list grid-layout">
             <div v-for="pkg in filteredPendingPool" :key="pkg.id" class="pool-item">
             <input type="checkbox" :value="pkg.id" v-model="selectedPoolPackages" />
             <div class="pool-info">
@@ -97,9 +137,11 @@
           </button>
         </div>
       </div>
+    </div>
 
-      <!-- Create New Package (To Pool) -->
-      <div class="section-block package-form">
+    <!-- TAB: YENİ PAKET EKLE -->
+    <div class="tab-content new-tab" v-if="activeTab === 'new'">
+      <div class="section-block package-form centered-panel">
         <h3>📦 Sisteme Yeni Paket Ekle</h3>
         
         <div class="input-group">
@@ -137,32 +179,8 @@
           Havuza Ekle
         </button>
       </div>
-
-      <button @click="logout" class="logout-btn">Güvenli Çıkış</button>
     </div>
 
-    <!-- Map & Telemetry Area -->
-    <div class="map-area" :class="{ 'collapsed-mobile': !isMapVisibleOnMobile }">
-      <div class="map-header" @click="isMapVisibleOnMobile = !isMapVisibleOnMobile">
-        <div class="map-header-title">
-          <h3>📍 Canlı Kurye İzleme & Rota Arama</h3>
-          <span class="polling-badge">🔴 Canlı (Son Güncelleme: {{ lastUpdate }})</span>
-        </div>
-        
-        <div class="search-bar" @click.stop>
-          <input type="text" v-model="barcodeSearch" placeholder="Barkod ile ara (Geçmiş Rota)" @keyup.enter="searchTourHistory" />
-          <button @click="searchTourHistory">Ara</button>
-        </div>
-        <span class="mobile-toggle-icon">{{ isMapVisibleOnMobile ? '🔽' : '▶️' }}</span>
-      </div>
-      
-      <div class="map-collapsible-content">
-        <div class="map-container">
-          <!-- Harita Bileşeni -->
-          <MapView :courierPosition="mockAdminPosition" :telemetryRoute="activeCourierRoute" />
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -176,6 +194,7 @@ export default {
   components: { MapView },
   data() {
     return {
+      activeTab: 'live',
       locations: [],
       couriers: [],
       packages: [],
@@ -231,12 +250,8 @@ export default {
     }
   },
   async mounted() {
-    try { this.locations = await dataService.getLocations(); } catch (e) { console.warn("Locations failed"); }
-    try { this.packages = await dataService.getAllPackages(); } catch (e) { console.warn("Packages failed"); }
-    try { this.couriers = await dataService.getCouriers(); } catch (e) { console.warn("Couriers failed"); }
-    
     this.lastUpdate = new Date().toLocaleTimeString();
-    this.startPolling();
+    await this.setTab('live');
   },
   beforeUnmount() {
     if (this.pollingTimer) {
@@ -244,6 +259,37 @@ export default {
     }
   },
   methods: {
+    async setTab(tabName) {
+      this.activeTab = tabName;
+      
+      if (tabName === 'live') {
+        try { this.locations = await dataService.getLocations(); } catch(e){}
+        try { this.packages = await dataService.getAllPackages(); } catch(e){}
+        try { this.couriers = await dataService.getCouriers(); } catch(e){}
+        this.startPolling();
+      } else {
+        if (this.pollingTimer) {
+          clearTimeout(this.pollingTimer);
+          this.pollingTimer = null;
+        }
+      }
+
+      if (tabName === 'pool') {
+        await this.loadPoolData();
+      }
+
+      if (tabName === 'new') {
+        if (this.locations.length === 0) {
+          try { this.locations = await dataService.getLocations(); } catch (e) {}
+        }
+      }
+    },
+    async loadPoolData() {
+      try { this.packages = await dataService.getAllPackages(); } catch (e) { console.warn("Packages failed"); }
+      if (this.couriers.length === 0) {
+        try { this.couriers = await dataService.getCouriers(); } catch (e) { console.warn("Couriers failed"); }
+      }
+    },
     toggleSelectAllFiltered(event) {
       const isChecked = event.target.checked;
       if (isChecked) {
@@ -296,10 +342,14 @@ export default {
           console.warn("Canlı izleme verisi çekilemedi (Simülasyon devam ediyor).");
         }
         
-        this.pollingTimer = setTimeout(poll, 10000); // 10s live polling
+        if (this.activeTab === 'live') {
+          this.pollingTimer = setTimeout(poll, 10000); // 10s live polling
+        }
       };
       // Start the first poll after 10 seconds since mounted() already fetched data
-      this.pollingTimer = setTimeout(poll, 10000);
+      if (this.activeTab === 'live') {
+        this.pollingTimer = setTimeout(poll, 10000);
+      }
     },
     async searchTourHistory() {
       if (!this.barcodeSearch.trim()) {
@@ -707,5 +757,120 @@ export default {
   font-size: 13px;
   font-style: italic;
   margin-bottom: 10px;
+}
+
+/* Tab Architecture Styles */
+.admin-dashboard-modern {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: #121212;
+  color: #fff;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.top-nav-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #1a1a1a;
+  border-bottom: 1px solid #333;
+  padding: 0 20px;
+  height: 60px;
+}
+.top-nav-tabs h2 {
+  color: #4CAF50;
+  margin: 0;
+  font-size: 18px;
+}
+
+.tabs-container {
+  display: flex;
+  gap: 10px;
+}
+.tabs-container button {
+  background: transparent;
+  border: none;
+  color: #888;
+  padding: 10px 15px;
+  font-size: 14px;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  transition: all 0.2s ease;
+  font-weight: bold;
+}
+.tabs-container button:hover {
+  color: #fff;
+}
+.tabs-container button.active {
+  color: #4CAF50;
+  border-bottom: 3px solid #4CAF50;
+}
+
+.logout-btn-top {
+  background-color: transparent;
+  color: #ff5252;
+  border: 1px solid #ff5252;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.tab-content {
+  flex-grow: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* Specific Tab Layouts */
+.live-tab {
+  flex-direction: row;
+}
+
+.pool-tab, .new-tab {
+  padding: 20px;
+  overflow-y: auto;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.centered-panel {
+  max-width: 600px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.full-width {
+  max-width: 900px;
+  width: 100%;
+}
+
+.panel-header-flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+.panel-header-flex h3 {
+  margin: 0;
+}
+
+.refresh-btn {
+  background: #333;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.refresh-btn:hover {
+  background: #444;
+}
+
+.grid-layout {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 15px;
 }
 </style>

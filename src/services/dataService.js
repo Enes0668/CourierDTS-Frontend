@@ -1,9 +1,23 @@
 import api from '@/api/index.js';
 
+const cache = {
+  locations: null,
+  couriers: null,
+  locationsTimestamp: 0,
+  couriersTimestamp: 0,
+  CACHE_DURATION: 5 * 60 * 1000 // 5 minutes
+};
+
 export const dataService = {
-  async getLocations() {
+  async getLocations(forceRefresh = false) {
+    const now = Date.now();
+    if (!forceRefresh && cache.locations && (now - cache.locationsTimestamp < cache.CACHE_DURATION)) {
+      return cache.locations;
+    }
     try {
       const response = await api.get('/locations');
+      cache.locations = response.data;
+      cache.locationsTimestamp = now;
       return response.data;
     } catch (error) {
       console.error("Locations fetch error:", error);
