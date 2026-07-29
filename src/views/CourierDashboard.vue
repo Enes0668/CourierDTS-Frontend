@@ -253,14 +253,18 @@ export default {
       if (this.locations.length > 0) {
         this.currentLocation = this.locations[0];
       }
+    } catch(e) { console.warn("Locations failed", e); }
+    
+    try {
       const courierId = localStorage.getItem('courier_id') || 1;
       this.packages = await dataService.getMyPackages(courierId);
+    } catch(e) { console.warn("Packages failed", e); }
+    
+    try {
       window.addEventListener('offline', this.updateOnlineStatus);
       window.addEventListener('online', this.updateOnlineStatus);
       window.addEventListener('telemetry_arrived', this.handleTelemetryArrived);
-    } catch(e) {
-      console.error("Initial load failed:", e);
-    }
+    } catch(e) { console.warn(e); }
   },
   beforeUnmount() {
     window.removeEventListener('offline', this.updateOnlineStatus);

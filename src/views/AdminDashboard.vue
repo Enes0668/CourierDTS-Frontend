@@ -231,14 +231,11 @@ export default {
     }
   },
   async mounted() {
-    try {
-      this.locations = await dataService.getLocations();
-      this.packages = await dataService.getAllPackages();
-      this.couriers = await dataService.getCouriers();
-      this.lastUpdate = new Date().toLocaleTimeString();
-    } catch (error) {
-      console.error("Initial data load failed:", error);
-    }
+    try { this.locations = await dataService.getLocations(); } catch (e) { console.warn("Locations failed"); }
+    try { this.packages = await dataService.getAllPackages(); } catch (e) { console.warn("Packages failed"); }
+    try { this.couriers = await dataService.getCouriers(); } catch (e) { console.warn("Couriers failed"); }
+    
+    this.lastUpdate = new Date().toLocaleTimeString();
     this.startPolling();
   },
   beforeUnmount() {
