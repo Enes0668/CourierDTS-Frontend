@@ -60,15 +60,16 @@ export default {
         const data = response.data;
         localStorage.setItem('jwt_token', data.token);
         
-        // Backend'den dönen role göre yönlendirme: 0 Admin, 1 Kurye
-        const role = data.role !== undefined ? data.role : data.Role;
-        if (role === 0 || role === "0" || String(role).toLowerCase() === 'admin') {
+        // Backend'den dönen role göre yönlendirme: "Admin" veya "Courier"
+        const roleStr = String(data.role).toLowerCase();
+        
+        if (roleStr === 'admin') {
           localStorage.setItem('user_role', 'admin');
-          localStorage.setItem('admin_id', data.id || data.userId || data.Id || data.UserId || 0);
+          localStorage.setItem('admin_id', data.userId || 0);
           this.$router.push('/admin');
         } else {
           localStorage.setItem('user_role', 'courier');
-          localStorage.setItem('courier_id', data.id || data.userId || data.Id || data.UserId || 1);
+          localStorage.setItem('courier_id', data.userId || 1);
           this.$router.push('/courier');
         }
       } catch (error) {
