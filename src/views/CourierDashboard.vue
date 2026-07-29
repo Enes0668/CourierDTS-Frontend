@@ -11,13 +11,7 @@
           </select>
         </div>
 
-        <div class="shift-toggle">
-          <label class="switch">
-            <input type="checkbox" v-model="isShiftActive" @change="toggleShift">
-            <span class="slider round"></span>
-          </label>
-          <span :class="{'active-text': isShiftActive}">{{ isShiftActive ? '🟢 Vardiya Açık' : '🔴 Vardiya Kapalı' }}</span>
-        </div>
+
       </div>
       <button @click="logout" class="logout-btn">Çıkış Yap</button>
     </div>
@@ -87,7 +81,7 @@
         <div class="input-group">
           <select id="next-stop" v-model="selectedNextStop">
             <option value="" disabled>Gidilecek Konumu Seçin...</option>
-            <option v-for="loc in locations" :key="loc.id" :value="loc" :disabled="loc.id === currentLocation.id">
+            <option v-for="loc in availableNextStops" :key="loc.id" :value="loc">
               {{ loc.name }}
             </option>
           </select>
@@ -95,9 +89,9 @@
         <button 
           @click="startJourney" 
           class="scan-btn"
-          :disabled="!selectedNextStop || !isShiftActive || !activeVehicleId"
+          :disabled="!selectedNextStop || !activeVehicleId"
         >
-          {{ !isShiftActive ? 'Önce Vardiya Başlatın' : (!activeVehicleId ? 'Araç Seçmelisiniz' : '🏍️ Yola Çık') }}
+          {{ !activeVehicleId ? 'Araç Seçmelisiniz' : '🏍️ Yola Çık' }}
         </button>
       </div>
 
@@ -206,7 +200,7 @@ export default {
       currentLocation: null,
       selectedNextStop: '',
       isDeliveryStarted: false,
-      isShiftActive: false, // New property for Shift Status
+      isShiftActive: true, // Always active
       isOffline: !navigator.onLine,
       routeData: null,
       mockPosition: null,
@@ -242,6 +236,15 @@ export default {
     packagesToDropoff() {
       if(!this.selectedNextStop) return [];
       return this.myPackages.filter(p => p.dropoffLocId === this.selectedNextStop.id);
+    },
+    availableNextStops() {
+      const targetLocationIds = new Set();
+      this.pendingPackages.forEach(pkg => targetLocationIds.add(pkg.pickupLocId));
+      this.myPackages.forEach(pkg => targetLocationIds.add(pkg.dropoffLocId));
+      
+      return this.locations.filter(loc => 
+        loc.id !== this.currentLocation?.id && targetLocationIds.has(loc.id)
+      );
     }
   },
   async mounted() {
