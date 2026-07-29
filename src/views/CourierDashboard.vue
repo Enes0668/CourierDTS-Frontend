@@ -315,12 +315,16 @@ export default {
     undoPickup(pkg) {
       if (confirm(`"${pkg.barcode}" numaralı paketi geri bırakmak istediğinize emin misiniz?`)) {
         pkg.status = 'Pending';
+        const courierId = localStorage.getItem('courier_id') || 5;
         actionQueue.queueAction({
           packageId: pkg.id,
-          actionType: 'UndoPickedUp',
+          locationId: this.currentLocation.id,
+          latitude: this.mockPosition ? this.mockPosition.lat : 0,
+          longitude: this.mockPosition ? this.mockPosition.lng : 0,
+          actionType: 'Cancelled',
           actionTime: new Date().toISOString(),
           notes: 'Kurye yanlış alımı iptal etti.'
-        });
+        }, courierId, this.currentJourneyId);
         toast.info("Paket geri bırakıldı.");
       }
     },
@@ -428,6 +432,7 @@ export default {
       }
     },
     processSelectedPickups() {
+      const courierId = localStorage.getItem('courier_id') || 5;
       const lat = this.mockPosition ? this.mockPosition.lat : 0;
       const lng = this.mockPosition ? this.mockPosition.lng : 0;
       
@@ -436,18 +441,20 @@ export default {
         if(pkg) {
           pkg.status = 'InTransit';
           actionQueue.queueAction({
-            MaterialId: pkg.id,
-            ActionType: 'PICKUP',
-            Lat: lat,
-            Lng: lng,
-            Timestamp: new Date().toISOString(),
-            Notes: this.actionNotes
-          });
+            packageId: pkg.id,
+            locationId: this.currentLocation.id,
+            latitude: lat,
+            longitude: lng,
+            actionType: 'PickedUp',
+            actionTime: new Date().toISOString(),
+            notes: this.actionNotes
+          }, courierId, this.currentJourneyId);
         }
       });
       this.closeModals();
     },
     processSelectedDropoffs() {
+      const courierId = localStorage.getItem('courier_id') || 5;
       const lat = this.mockPosition ? this.mockPosition.lat : 0;
       const lng = this.mockPosition ? this.mockPosition.lng : 0;
       
@@ -456,13 +463,14 @@ export default {
         if(pkg) {
           pkg.status = 'Delivered';
           actionQueue.queueAction({
-            MaterialId: pkg.id,
-            ActionType: 'DROPOFF',
-            Lat: lat,
-            Lng: lng,
-            Timestamp: new Date().toISOString(),
-            Notes: this.actionNotes
-          });
+            packageId: pkg.id,
+            locationId: this.currentLocation.id,
+            latitude: lat,
+            longitude: lng,
+            actionType: 'Delivered',
+            actionTime: new Date().toISOString(),
+            notes: this.actionNotes
+          }, courierId, this.currentJourneyId);
         }
       });
       this.closeModals();

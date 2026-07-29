@@ -12,7 +12,7 @@ export const dataService = {
   },
   async getAllPackages() {
     try {
-        const response = await api.get('/materials');
+        const response = await api.get('/packages');
         return response.data;
     } catch (error) {
         console.error("API Error (getAllPackages):", error);
@@ -22,7 +22,7 @@ export const dataService = {
 
   async getMyPackages(courierId) {
     try {
-        const response = await api.get(`/materials/mymaterials?courierId=${courierId}`);
+        const response = await api.get(`/packages/mypackages?courierId=${courierId}`);
         return response.data;
     } catch (error) {
         console.error("API Error (getMyPackages):", error);
@@ -32,7 +32,7 @@ export const dataService = {
 
   async createPackage(payload) {
     try {
-      const response = await api.post('/materials', payload);
+      const response = await api.post('/packages', payload);
       return response.data;
     } catch (error) {
       console.error("API Error:", error);
@@ -40,9 +40,9 @@ export const dataService = {
     }
   },
 
-  async assignPackageBulk(materialIds, targetCourierId) {
+  async assignPackageBulk(packageIds, courierId) {
     try {
-      const response = await api.post(`/materials/bulk-assign`, { materialIds, targetCourierId });
+      const response = await api.put(`/packages/bulk-assign`, { packageIds, courierId });
       return response.data;
     } catch (error) {
       console.error("API Error (assignPackageBulk):", error);
@@ -52,7 +52,7 @@ export const dataService = {
 
   async completeJourney(journeyId) {
     try {
-      const response = await api.put(`/tours/${journeyId}/complete`);
+      const response = await api.put(`/journeys/${journeyId}/complete`);
       return response.data;
     } catch (error) {
       console.error("API Error (completeJourney):", error);
@@ -61,13 +61,13 @@ export const dataService = {
   },
 
   async startJourney(payload) {
-    const response = await api.post('/tours/start', payload);
+    const response = await api.post('/journeys/start', payload);
     return response.data;
   },
 
   async getJourneys(courierId) {
     try {
-      const response = await api.get(`/tours?courierId=${courierId}`);
+      const response = await api.get(`/journeys?courierId=${courierId}`);
       return response.data;
     } catch (error) {
       console.error("API Error (getJourneys):", error);
@@ -77,7 +77,7 @@ export const dataService = {
 
   async getTourHistoryByBarcode(barcode) {
     try {
-      const response = await api.get(`/tours/history?barcode=${barcode}`);
+      const response = await api.get(`/packages/route?barcode=${barcode}`);
       return response.data; // Expected to return array of ActualPaths
     } catch (error) {
       console.error("API Error (getTourHistoryByBarcode):", error);
@@ -95,14 +95,14 @@ export const dataService = {
     }
   },
 
-  async syncActions(actions) {
-    const response = await api.post('/materials/sync', actions);
+  async syncActions(payload) {
+    const response = await api.post('/packages/syncactions', payload);
     return response.data;
   },
   
   async getCouriers() {
     try {
-      const response = await api.get('/users?role=1');
+      const response = await api.get('/couriers');
       return response.data.map(c => ({
         id: c.id || c.userId,
         name: c.name || c.username,
