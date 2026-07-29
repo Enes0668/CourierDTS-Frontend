@@ -12,11 +12,9 @@ class ActionQueueService {
 
   /**
    * Kurye paketi aldığında veya teslim ettiğinde bu metod çağrılır.
-   * @param {Object} action - { packageId, actionType, actionTime, notes }
-   * @param {Number} courierId 
-   * @param {Number} journeyId 
+   * @param {Object} action - { MaterialId, ActionType, Lat, Lng, Timestamp, Notes }
    */
-  async queueAction(action, courierId, journeyId) {
+  async queueAction(action) {
     // action: { MaterialId: 1, ActionType: "PICKUP", Lat: 40.0, Lng: 29.0, Timestamp: "..." }
     const payload = [action];
 

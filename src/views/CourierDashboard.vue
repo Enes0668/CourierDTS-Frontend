@@ -195,7 +195,6 @@ import { dataService } from '../services/dataService';
 import { telemetry } from '../services/telemetryServices';
 import { actionQueue } from '../services/actionQueueService';
 import { toast } from '../services/toast';
-import { calculateDistance } from '../utils/geoMath';
 
 export default {
   name: 'CourierDashboard',
@@ -316,13 +315,12 @@ export default {
     undoPickup(pkg) {
       if (confirm(`"${pkg.barcode}" numaralı paketi geri bırakmak istediğinize emin misiniz?`)) {
         pkg.status = 'Pending';
-        const courierId = localStorage.getItem('courier_id') || 5;
         actionQueue.queueAction({
           packageId: pkg.id,
           actionType: 'UndoPickedUp',
           actionTime: new Date().toISOString(),
           notes: 'Kurye yanlış alımı iptal etti.'
-        }, courierId, this.currentJourneyId);
+        });
         toast.info("Paket geri bırakıldı.");
       }
     },
@@ -430,7 +428,6 @@ export default {
       }
     },
     processSelectedPickups() {
-      const courierId = localStorage.getItem('courier_id') || 5;
       const lat = this.mockPosition ? this.mockPosition.lat : 0;
       const lng = this.mockPosition ? this.mockPosition.lng : 0;
       
@@ -445,13 +442,12 @@ export default {
             Lng: lng,
             Timestamp: new Date().toISOString(),
             Notes: this.actionNotes
-          }, courierId, this.currentJourneyId);
+          });
         }
       });
       this.closeModals();
     },
     processSelectedDropoffs() {
-      const courierId = localStorage.getItem('courier_id') || 5;
       const lat = this.mockPosition ? this.mockPosition.lat : 0;
       const lng = this.mockPosition ? this.mockPosition.lng : 0;
       
@@ -466,7 +462,7 @@ export default {
             Lng: lng,
             Timestamp: new Date().toISOString(),
             Notes: this.actionNotes
-          }, courierId, this.currentJourneyId);
+          });
         }
       });
       this.closeModals();
