@@ -263,9 +263,9 @@ export default {
       this.activeTab = tabName;
       
       if (tabName === 'live') {
-        try { this.locations = await dataService.getLocations(); } catch(e){}
-        try { this.packages = await dataService.getAllPackages(); } catch(e){}
-        try { this.couriers = await dataService.getCouriers(); } catch(e){}
+        try { this.locations = await dataService.getLocations(); } catch(e){ console.warn(e); }
+        try { this.packages = await dataService.getAllPackages(); } catch(e){ console.warn(e); }
+        try { this.couriers = await dataService.getCouriers(); } catch(e){ console.warn(e); }
         this.startPolling();
       } else {
         if (this.pollingTimer) {
@@ -280,7 +280,7 @@ export default {
 
       if (tabName === 'new') {
         if (this.locations.length === 0) {
-          try { this.locations = await dataService.getLocations(); } catch (e) {}
+          try { this.locations = await dataService.getLocations(); } catch (e) { console.warn(e); }
         }
       }
     },
