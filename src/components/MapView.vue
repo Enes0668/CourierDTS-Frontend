@@ -118,18 +118,28 @@ export default {
       this.telemetryLayerGroup = L.layerGroup().addTo(this.map);
     },
     drawTelemetryRoute(telemetryPoints) {
-      this.telemetryLayerGroup.clearLayers();
-      if (!telemetryPoints || telemetryPoints.length === 0) return;
+      if (!telemetryPoints || telemetryPoints.length === 0) {
+        this.telemetryLayerGroup.clearLayers();
+        this.telemetryPolyline = null;
+        return;
+      }
 
       const pathLatLngs = telemetryPoints.map(coord => [coord.lat, coord.lng]);
-      const polyline = L.polyline(pathLatLngs, {
-        color: '#ff5722', // turuncu
-        weight: 4,
-        opacity: 0.8,
-        dashArray: '10, 10'
-      }).addTo(this.telemetryLayerGroup);
       
-      this.map.fitBounds(polyline.getBounds(), { padding: MAP_SETTINGS.BOUNDS_PADDING });
+      if (!this.telemetryPolyline) {
+        this.telemetryPolyline = L.polyline(pathLatLngs, {
+          color: '#ff5722',
+          weight: 4,
+          opacity: 0.8,
+          dashArray: '10, 10'
+        }).addTo(this.telemetryLayerGroup);
+        
+        // Only fit bounds on first load
+        this.map.fitBounds(this.telemetryPolyline.getBounds(), { padding: MAP_SETTINGS.BOUNDS_PADDING });
+      } else {
+        // Just update points, do not clear layers or zoom
+        this.telemetryPolyline.setLatLngs(pathLatLngs);
+      }
     },
     drawPreview(selections) {
       this.previewLayerGroup.clearLayers();
