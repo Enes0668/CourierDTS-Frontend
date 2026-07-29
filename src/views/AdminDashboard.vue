@@ -231,9 +231,13 @@ export default {
     }
   },
   async mounted() {
-    this.locations = await dataService.getLocations();
-    this.packages = await dataService.getAllPackages();
-    this.couriers = await dataService.getCouriers();
+    try {
+      this.locations = await dataService.getLocations();
+      this.packages = await dataService.getAllPackages();
+      this.couriers = await dataService.getCouriers();
+    } catch (error) {
+      console.error("Initial data load failed:", error);
+    }
     this.startPolling();
   },
   beforeUnmount() {

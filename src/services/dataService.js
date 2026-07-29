@@ -7,7 +7,7 @@ export const dataService = {
       return response.data;
     } catch (error) {
       console.error("Locations fetch error:", error);
-      return [];
+      throw error;
     }
   },
   async getAllPackages() {
@@ -16,7 +16,7 @@ export const dataService = {
         return response.data;
     } catch (error) {
         console.error("API Error (getAllPackages):", error);
-        return [];
+        throw error;
     }
   },
 
@@ -26,7 +26,7 @@ export const dataService = {
         return response.data;
     } catch (error) {
         console.error("API Error (getMyPackages):", error);
-        return [];
+        throw error;
     }
   },
 
@@ -71,7 +71,7 @@ export const dataService = {
       return response.data;
     } catch (error) {
       console.error("API Error (getJourneys):", error);
-      return [];
+      throw error;
     }
   },
 
@@ -81,7 +81,7 @@ export const dataService = {
       return response.data; // Expected to return array of ActualPaths
     } catch (error) {
       console.error("API Error (getTourHistoryByBarcode):", error);
-      return [];
+      throw error;
     }
   },
 
@@ -91,7 +91,7 @@ export const dataService = {
       return response.data;
     } catch (error) {
       console.error("API Error (getTelemetry):", error);
-      return [];
+      throw error;
     }
   },
 
@@ -112,7 +112,7 @@ export const dataService = {
       }));
     } catch (error) {
       console.error("Couriers fetch error", error);
-      return [];
+      throw error;
     }
   }
 };

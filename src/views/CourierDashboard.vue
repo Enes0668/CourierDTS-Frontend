@@ -248,15 +248,19 @@ export default {
     }
   },
   async mounted() {
-    this.locations = await dataService.getLocations();
-    if (this.locations.length > 0) {
-      this.currentLocation = this.locations[0];
+    try {
+      this.locations = await dataService.getLocations();
+      if (this.locations.length > 0) {
+        this.currentLocation = this.locations[0];
+      }
+      const courierId = localStorage.getItem('courier_id') || 1;
+      this.packages = await dataService.getMyPackages(courierId);
+      window.addEventListener('offline', this.updateOnlineStatus);
+      window.addEventListener('online', this.updateOnlineStatus);
+      window.addEventListener('telemetry_arrived', this.handleTelemetryArrived);
+    } catch(e) {
+      console.error("Initial load failed:", e);
     }
-    const courierId = localStorage.getItem('courier_id') || 1;
-    this.packages = await dataService.getMyPackages(courierId);
-    window.addEventListener('offline', this.updateOnlineStatus);
-    window.addEventListener('online', this.updateOnlineStatus);
-    window.addEventListener('telemetry_arrived', this.handleTelemetryArrived);
   },
   beforeUnmount() {
     window.removeEventListener('offline', this.updateOnlineStatus);
