@@ -116,13 +116,13 @@
           </div>
           
           <div class="pool-list grid-layout">
-            <div v-for="pkg in filteredPendingPool" :key="pkg.id" class="pool-item">
-            <input type="checkbox" :value="pkg.id" v-model="selectedPoolPackages" />
-            <div class="pool-info">
-              <strong>{{ pkg.barcode || 'İsimsiz' }}</strong> (P{{ pkg.priority }})
-              <div class="pool-desc">{{ pkg.description }}</div>
+            <div v-for="pkg in filteredPendingPool" :key="pkg.id || pkg.Id" class="pool-item">
+              <input type="checkbox" :value="pkg.id || pkg.Id" v-model="selectedPoolPackages" />
+              <div class="pool-info">
+                <strong>{{ pkg.barcode || pkg.Barcode || 'İsimsiz' }}</strong> (P{{ pkg.priority || pkg.Priority }})
+                <div class="pool-desc">{{ pkg.description || pkg.Description }}</div>
+              </div>
             </div>
-          </div>
           </div>
         </div>
 
@@ -221,15 +221,22 @@ export default {
   },
   computed: {
     pendingPool() {
-      return this.packages.filter(p => !p.assignedCourierId || p.assignedCourierId === '');
+      if (!Array.isArray(this.packages)) return [];
+      return this.packages.filter(p => {
+        const courierId = p.assignedCourierId !== undefined ? p.assignedCourierId : p.AssignedCourierId;
+        return !courierId || courierId === '' || courierId === 0;
+      });
     },
     filteredPendingPool() {
-      const lowerFilter = this.poolFilterText.toLowerCase();
+      if (!Array.isArray(this.pendingPool)) return [];
+      const lowerFilter = (this.poolFilterText || '').toLowerCase();
       if (!lowerFilter) return this.pendingPool;
-      return this.pendingPool.filter(p => 
-        (p.barcode && p.barcode.toLowerCase().includes(lowerFilter)) ||
-        (p.description && p.description.toLowerCase().includes(lowerFilter))
-      );
+      return this.pendingPool.filter(p => {
+        const barcode = p.barcode || p.Barcode || '';
+        const desc = p.description || p.Description || '';
+        return String(barcode).toLowerCase().includes(lowerFilter) || 
+               String(desc).toLowerCase().includes(lowerFilter);
+      });
     },
     isAllFilteredSelected() {
       if (this.filteredPendingPool.length === 0) return false;
@@ -237,10 +244,20 @@ export default {
       return this.filteredPendingPool.every(p => this.selectedPoolPackages.includes(p.id));
     },
     courierPackagesInTransit() {
-      return this.packages.filter(p => p.assignedCourierId === this.selectedCourierId && p.status === 'InTransit');
+      if (!Array.isArray(this.packages)) return [];
+      return this.packages.filter(p => {
+        const courierId = p.assignedCourierId !== undefined ? p.assignedCourierId : p.AssignedCourierId;
+        const status = p.status || p.Status;
+        return courierId === this.selectedCourierId && status === 'InTransit';
+      });
     },
     courierPackagesPending() {
-      return this.packages.filter(p => p.assignedCourierId === this.selectedCourierId && p.status === 'Pending');
+      if (!Array.isArray(this.packages)) return [];
+      return this.packages.filter(p => {
+        const courierId = p.assignedCourierId !== undefined ? p.assignedCourierId : p.AssignedCourierId;
+        const status = p.status || p.Status;
+        return courierId === this.selectedCourierId && status === 'Pending';
+      });
     },
     isFormValid() {
       return this.newPkg.description && 
@@ -264,7 +281,12 @@ export default {
       
       if (tabName === 'live') {
         try { this.locations = await dataService.getLocations(); } catch(e){ console.warn(e); }
-        try { this.packages = await dataService.getAllPackages(); } catch(e){ console.warn(e); }
+        try { 
+          let res = await dataService.getAllPackages(); 
+          if (res && res.data && Array.isArray(res.data)) this.packages = res.data;
+          else if (Array.isArray(res)) this.packages = res;
+          else this.packages = [];
+        } catch(e){ console.warn(e); this.packages = []; }
         try { this.couriers = await dataService.getCouriers(); } catch(e){ console.warn(e); }
         this.startPolling();
       } else {
@@ -285,7 +307,18 @@ export default {
       }
     },
     async loadPoolData() {
-      try { this.packages = await dataService.getAllPackages(); } catch (e) { console.warn("Packages failed"); }
+      try { 
+        let res = await dataService.getAllPackages(); 
+        // Backend wrapper checks
+        if (res && res.data && Array.isArray(res.data)) {
+          this.packages = res.data;
+        } else if (Array.isArray(res)) {
+          this.packages = res;
+        } else {
+          this.packages = [];
+        }
+      } catch (e) { console.warn("Packages failed"); this.packages = []; }
+      
       if (this.couriers.length === 0) {
         try { this.couriers = await dataService.getCouriers(); } catch (e) { console.warn("Couriers failed"); }
       }
