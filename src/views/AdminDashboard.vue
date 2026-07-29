@@ -235,6 +235,7 @@ export default {
       this.locations = await dataService.getLocations();
       this.packages = await dataService.getAllPackages();
       this.couriers = await dataService.getCouriers();
+      this.lastUpdate = new Date().toLocaleTimeString();
     } catch (error) {
       console.error("Initial data load failed:", error);
     }
@@ -300,7 +301,8 @@ export default {
         
         this.pollingTimer = setTimeout(poll, 10000); // 10s live polling
       };
-      poll();
+      // Start the first poll after 10 seconds since mounted() already fetched data
+      this.pollingTimer = setTimeout(poll, 10000);
     },
     async searchTourHistory() {
       if (!this.barcodeSearch.trim()) {
