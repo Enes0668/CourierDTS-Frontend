@@ -52,7 +52,7 @@ export default {
       this.isLoading = true;
       
       try {
-        const response = await api.post('/auth/login', {
+        const response = await api.post('/login', {
           username: this.username,
           password: this.password
         });

@@ -1,8 +1,8 @@
 import axios from 'axios';
 import router from '@/router';
 
-// VUE_APP_API_URL değişkeni .env dosyasından okunur
-const API_BASE_URL = process.env.VUE_APP_API_URL || 'http://localhost:5000';
+// Backend doğrudan Enes'in Swagger/API sunucusuna yönlendirildi
+const API_BASE_URL = process.env.VUE_APP_API_URL || 'https://courierdts-backend.onrender.com/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
