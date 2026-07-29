@@ -17,25 +17,22 @@ class ActionQueueService {
    * @param {Number} journeyId 
    */
   async queueAction(action, courierId, journeyId) {
-    const payload = {
-      courierId: courierId,
-      journeyId: journeyId,
-      actions: [action]
-    };
+    // action: { MaterialId: 1, ActionType: "PICKUP", Lat: 40.0, Lng: 29.0, Timestamp: "..." }
+    const payload = [action];
 
     if (navigator.onLine) {
       try {
-        await api.post('/packages/syncactions', payload);
+        await api.post('/materials/sync', payload);
         console.log('[SYNC] İşlem başarıyla Backend\'e iletildi.', action);
         return true;
       } catch (error) {
         console.warn('[SYNC] Sunucuya ulaşılamadı. Kuyruğa ekleniyor...', error);
-        this._saveToQueue(payload);
+        this._saveToQueue(action);
         return false;
       }
     } else {
       console.log('[SYNC] İnternet yok. İşlem kuyruğa eklendi.');
-      this._saveToQueue(payload);
+      this._saveToQueue(action);
       return false;
     }
   }
@@ -54,20 +51,14 @@ class ActionQueueService {
       if (queue.length > 0) {
         console.log(`[SYNC] ${queue.length} adet işlem kuyruktan Backend'e gönderiliyor...`);
         
-        // Kuyruktaki her bir payload'u sunucuya göndermeyi dene
-        const remainingQueue = [];
-        
-        for (const payload of queue) {
-          try {
-            await api.post('/packages/syncactions', payload);
-            console.log('[SYNC] Kuyruktaki işlem başarıyla gönderildi.', payload);
-          } catch (error) {
-            console.error('[SYNC] Kuyruktaki işlem gönderilemedi, tekrar denenecek.', error);
-            remainingQueue.push(payload); // Başarısız olanları tekrar kuyruğa at
-          }
+        try {
+          await api.post('/materials/sync', queue);
+          console.log('[SYNC] Kuyruktaki tüm işlemler başarıyla gönderildi.');
+          localStorage.setItem(this.QUEUE_KEY, JSON.stringify([]));
+        } catch (error) {
+          console.error('[SYNC] Kuyruktaki işlemler gönderilemedi, tekrar denenecek.', error);
+          // Keep them in the queue if failed
         }
-        
-        localStorage.setItem(this.QUEUE_KEY, JSON.stringify(remainingQueue));
       }
     });
   }

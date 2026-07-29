@@ -12,7 +12,7 @@ export const dataService = {
   },
   async getAllPackages() {
     try {
-        const response = await api.get('/packages');
+        const response = await api.get('/materials');
         return response.data;
     } catch (error) {
         console.error("API Error (getAllPackages):", error);
@@ -22,7 +22,7 @@ export const dataService = {
 
   async getMyPackages(courierId) {
     try {
-        const response = await api.get(`/packages/mypackages?courierId=${courierId}`);
+        const response = await api.get(`/materials/mymaterials?courierId=${courierId}`);
         return response.data;
     } catch (error) {
         console.error("API Error (getMyPackages):", error);
@@ -31,9 +31,8 @@ export const dataService = {
   },
 
   async createPackage(payload) {
-    console.log("[Axios] createPackage çağrıldı", payload);
     try {
-      const response = await api.post('/packages', payload);
+      const response = await api.post('/materials', payload);
       return response.data;
     } catch (error) {
       console.error("API Error:", error);
@@ -41,30 +40,19 @@ export const dataService = {
     }
   },
 
-  async assignPackage(packageId, courierId) {
+  async assignPackageBulk(materialIds, targetCourierId) {
     try {
-      // Enes'in yeni eklediği Atama (Assign) Endpoint'i
-      const response = await api.put(`/packages/${packageId}/assign`, { courierId });
+      const response = await api.post(`/materials/bulk-assign`, { materialIds, targetCourierId });
       return response.data;
     } catch (error) {
-      console.error("API Error (assignPackage):", error);
-      throw error;
-    }
-  },
-
-  async setCourierActive(courierId, isActive) {
-    try {
-      const response = await api.put('/courier/active', { courierId, isActive });
-      return response.data;
-    } catch (error) {
-      console.error("API Error (setCourierActive):", error);
+      console.error("API Error (assignPackageBulk):", error);
       throw error;
     }
   },
 
   async completeJourney(journeyId) {
     try {
-      const response = await api.put(`/journeys/${journeyId}/complete`);
+      const response = await api.put(`/tours/${journeyId}/complete`);
       return response.data;
     } catch (error) {
       console.error("API Error (completeJourney):", error);
@@ -72,18 +60,27 @@ export const dataService = {
     }
   },
 
-  async startJourney(courierId, startLocationId, endLocationId) {
-    console.log("[Axios] startJourney çağrıldı");
-    const response = await api.post('/journeys/start', { courierId, startLocationId, endLocationId });
+  async startJourney(payload) {
+    const response = await api.post('/tours/start', payload);
     return response.data;
   },
 
   async getJourneys(courierId) {
     try {
-      const response = await api.get(`/journeys?courierId=${courierId}`);
+      const response = await api.get(`/tours?courierId=${courierId}`);
       return response.data;
     } catch (error) {
       console.error("API Error (getJourneys):", error);
+      return [];
+    }
+  },
+
+  async getTourHistoryByBarcode(barcode) {
+    try {
+      const response = await api.get(`/tours/history?barcode=${barcode}`);
+      return response.data; // Expected to return array of ActualPaths
+    } catch (error) {
+      console.error("API Error (getTourHistoryByBarcode):", error);
       return [];
     }
   },
@@ -98,18 +95,17 @@ export const dataService = {
     }
   },
 
-  async syncActions(journeyId, actions) {
-    console.log("[Axios] syncActions çağrıldı", actions);
-    const response = await api.post('/packages/syncactions', { journeyId, actions });
+  async syncActions(actions) {
+    const response = await api.post('/materials/sync', actions);
     return response.data;
   },
   
   async getCouriers() {
     try {
-      const response = await api.get('/couriers');
+      const response = await api.get('/users?role=1');
       return response.data.map(c => ({
-        id: c.id,
-        name: c.name + " " + c.surname,
+        id: c.id || c.userId,
+        name: c.name || c.username,
         lat: c.lastLat,
         lng: c.lastLng,
         status: c.isActive ? "Aktif" : "Pasif"

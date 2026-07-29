@@ -193,13 +193,17 @@ class TelemetryService {
     }
 
     try {
-      await api.post('/telemetry/batch', {
+      const response = await api.post('/telemetry/batch', {
           context: packet.context,
           payload: packet.payload,
           event_name: packet.event_name,
           timestamp: packet.timestamp
       });
       console.log(`[TELEMETRY] ${packet.event_name} başarıyla gönderildi.`);
+      
+      if (response.data && response.data.isArrived) {
+        window.dispatchEvent(new CustomEvent('telemetry_arrived'));
+      }
     } catch (e) {
       console.error('[TELEMETRY] API gönderim hatası:', e);
       this._saveToOfflineBackup(packet); // Hata durumunda yedeğe al

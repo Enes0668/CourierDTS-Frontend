@@ -145,26 +145,21 @@
     <div class="map-area" :class="{ 'collapsed-mobile': !isMapVisibleOnMobile }">
       <div class="map-header" @click="isMapVisibleOnMobile = !isMapVisibleOnMobile">
         <div class="map-header-title">
-          <h3>📍 Canlı Kurye İzleme</h3>
+          <h3>📍 Canlı Kurye İzleme & Rota Arama</h3>
           <span class="polling-badge">🔴 Canlı (Son Güncelleme: {{ lastUpdate }})</span>
+        </div>
+        
+        <div class="search-bar" @click.stop>
+          <input type="text" v-model="barcodeSearch" placeholder="Barkod ile ara (Geçmiş Rota)" @keyup.enter="searchTourHistory" />
+          <button @click="searchTourHistory">Ara</button>
         </div>
         <span class="mobile-toggle-icon">{{ isMapVisibleOnMobile ? '🔽' : '▶️' }}</span>
       </div>
       
       <div class="map-collapsible-content">
         <div class="map-container">
-          <!-- In a real scenario, mockAdminPosition would be fetched from Backend based on selectedCourierId -->
+          <!-- Harita Bileşeni -->
           <MapView :courierPosition="mockAdminPosition" :telemetryRoute="activeCourierRoute" />
-        </div>
-
-        <!-- Recent Assignments Log (Optional visual feedback) -->
-        <div class="logs-area">
-          <h4>Son Eklenen Paketler (Simülasyon Logu)</h4>
-          <div class="log-list">
-            <div v-for="(pkg, idx) in recentPackages" :key="idx" class="log-item">
-              ✅ <strong>{{ pkg.barcode || 'Bilinmeyen Barkod' }}</strong> kuryeye atandı. (Öncelik: {{ pkg.priority }})
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -188,6 +183,7 @@ export default {
       selectedAssignCourierId: '0', // 0 means General
       selectedPoolPackages: [],
       poolFilterText: '',
+      barcodeSearch: '',
       newPkg: {
         barcode: '',
         description: '',
@@ -195,13 +191,12 @@ export default {
         pickupLocationId: '',
         dropoffLocationId: ''
       },
-      recentPackages: [],
       isMapVisibleOnMobile: false,
 
       // Telemetry Data
       lastUpdate: 'Henüz güncellenmedi',
       pollingTimer: null,
-      mockAdminPosition: { lat: 39.9208, lng: 32.8541 }, // Mock default position
+      mockAdminPosition: null, 
       activeCourierRoute: null
     }
   },
@@ -303,6 +298,24 @@ export default {
       };
       poll();
     },
+    async searchTourHistory() {
+      if (!this.barcodeSearch.trim()) {
+        toast.error("Lütfen bir barkod girin.");
+        return;
+      }
+      try {
+        const historyData = await dataService.getTourHistoryByBarcode(this.barcodeSearch.trim());
+        if (historyData && historyData.length > 0) {
+          // Flatten if multiple tours exist, or just show the first one
+          this.activeCourierRoute = historyData.flat();
+          toast.success("Geçmiş rota haritaya çizildi.");
+        } else {
+          toast.error("Bu barkoda ait rota geçmişi bulunamadı.");
+        }
+      } catch (error) {
+        toast.error("Rota aranırken bir hata oluştu.");
+      }
+    },
     async assignSelectedToCourier() {
       let courierName = "Genel Havuz (Tüm Kuryeler)";
       let assignId = parseInt(this.selectedAssignCourierId);
@@ -314,12 +327,7 @@ export default {
       }
 
       try {
-        for (const pkgId of this.selectedPoolPackages) {
-          // Send 0 for general assignment, or specific courier ID
-          await dataService.assignPackage(pkgId, assignId);
-          const pkg = this.packages.find(p => p.id === pkgId);
-          if (pkg) this.recentPackages.unshift(pkg);
-        }
+        await dataService.assignPackageBulk(this.selectedPoolPackages, assignId);
         
         toast.success(`${this.selectedPoolPackages.length} paket ${courierName} hedefine atandı!`);
         this.selectedPoolPackages = []; // Reset selection
@@ -553,6 +561,25 @@ export default {
   display: flex;
   align-items: center;
   gap: 15px;
+}
+.search-bar {
+  display: flex;
+  gap: 5px;
+}
+.search-bar input {
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #444;
+  background: #222;
+  color: white;
+}
+.search-bar button {
+  padding: 8px 12px;
+  background: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
 }
 .mobile-toggle-icon {
   display: none;

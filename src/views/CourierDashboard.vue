@@ -3,6 +3,14 @@
     <div class="header">
       <div class="header-left">
         <h2>Kurye Paneli</h2>
+        
+        <div class="vehicle-select" v-if="!isDeliveryStarted">
+          <select v-model="activeVehicleId" @change="updateVehicle">
+            <option value="" disabled>Araç Seçin</option>
+            <option v-for="v in vehicles" :key="v.id" :value="v.id">{{ v.plate }} - {{ v.type }}</option>
+          </select>
+        </div>
+
         <div class="shift-toggle">
           <label class="switch">
             <input type="checkbox" v-model="isShiftActive" @change="toggleShift">
@@ -87,9 +95,9 @@
         <button 
           @click="startJourney" 
           class="scan-btn"
-          :disabled="!selectedNextStop || !isShiftActive"
+          :disabled="!selectedNextStop || !isShiftActive || !activeVehicleId"
         >
-          {{ isShiftActive ? '🏍️ Yola Çık' : 'Önce Vardiya Başlatın' }}
+          {{ !isShiftActive ? 'Önce Vardiya Başlatın' : (!activeVehicleId ? 'Araç Seçmelisiniz' : '🏍️ Yola Çık') }}
         </button>
       </div>
 
@@ -212,7 +220,13 @@ export default {
       actionNotes: "",
       selectedPickupPackages: [],
       selectedDropoffPackages: [],
-      currentJourneyId: null
+      currentJourneyId: null,
+      vehicles: [
+        { id: 1, plate: "34 ABC 123", type: "Motosiklet" },
+        { id: 2, plate: "34 DEF 456", type: "Panelvan" }
+      ],
+      activeVehicleId: '',
+      gpsWatcherId: null
     }
   },
   computed: {
@@ -240,34 +254,13 @@ export default {
     this.packages = await dataService.getMyPackages(courierId);
     window.addEventListener('offline', this.updateOnlineStatus);
     window.addEventListener('online', this.updateOnlineStatus);
-
-    // Simülasyon verilerini dinle
-    this.simChannel = new BroadcastChannel('gps_simulation');
-    this.simChannel.onmessage = (event) => {
-      if(event.data.type === 'GPS_UPDATE' && this.isDeliveryStarted && !this.isDelivered) {
-        this.mockPosition = { lat: event.data.lat, lng: event.data.lng };
-        
-        // Hedefe olan mesafeyi hesapla
-        if (this.selectedNextStop) {
-          const targetLat = this.selectedNextStop.latitude || this.selectedNextStop.lat;
-          const targetLng = this.selectedNextStop.longitude || this.selectedNextStop.lng;
-          
-          const dist = calculateDistance(event.data.lat, event.data.lng, targetLat, targetLng);
-          
-          // Eğer hedefe 100 metreden daha yakınsa butonu göster
-          if (dist < 100) {
-             this.isNearTarget = true;
-          }
-        }
-      }
-    };
+    window.addEventListener('telemetry_arrived', this.handleTelemetryArrived);
   },
   beforeUnmount() {
     window.removeEventListener('offline', this.updateOnlineStatus);
     window.removeEventListener('online', this.updateOnlineStatus);
-    if (this.simChannel) {
-      this.simChannel.close();
-    }
+    window.removeEventListener('telemetry_arrived', this.handleTelemetryArrived);
+    this.stopGpsTracking();
   },
   methods: {
     updateOnlineStatus() {
@@ -286,6 +279,39 @@ export default {
     getLocationName(id) {
       const loc = this.locations.find(l => l.id === id);
       return loc ? loc.name : 'Bilinmeyen Konum';
+    },
+    async updateVehicle() {
+      // Simulate saving active vehicle for courier
+      toast.info("Aktif aracınız güncellendi.");
+    },
+    handleTelemetryArrived() {
+      if (this.isDeliveryStarted && !this.isDelivered) {
+        this.isNearTarget = true;
+      }
+    },
+    startGpsTracking() {
+      if ("geolocation" in navigator) {
+        this.gpsWatcherId = navigator.geolocation.watchPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            this.mockPosition = { lat, lng };
+            
+            // Pass coordinate to Telemetry Service which buffers and sends it
+            telemetry.addCoordinate(lat, lng, false);
+          },
+          (error) => console.warn("GPS Hatası:", error),
+          { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+        );
+      } else {
+        toast.error("Cihazınız GPS desteklemiyor!");
+      }
+    },
+    stopGpsTracking() {
+      if (this.gpsWatcherId !== null) {
+        navigator.geolocation.clearWatch(this.gpsWatcherId);
+        this.gpsWatcherId = null;
+      }
     },
     undoPickup(pkg) {
       if (confirm(`"${pkg.barcode}" numaralı paketi geri bırakmak istediğinize emin misiniz?`)) {
@@ -370,6 +396,9 @@ export default {
           lng: this.currentLocation.longitude || this.currentLocation.lng 
         };
 
+        // Gerçek cihaz GPS takibini başlat
+        this.startGpsTracking();
+
       } catch (error) {
         console.error("API Hatası:", error);
         toast.error("Sistemsel bir hata oluştu.");
@@ -402,15 +431,20 @@ export default {
     },
     processSelectedPickups() {
       const courierId = localStorage.getItem('courier_id') || 5;
+      const lat = this.mockPosition ? this.mockPosition.lat : 0;
+      const lng = this.mockPosition ? this.mockPosition.lng : 0;
+      
       this.selectedPickupPackages.forEach(pkgId => {
         const pkg = this.packages.find(p => p.id === pkgId);
         if(pkg) {
           pkg.status = 'InTransit';
           actionQueue.queueAction({
-            packageId: pkg.id,
-            actionType: 'PickedUp',
-            actionTime: new Date().toISOString(),
-            notes: this.actionNotes
+            MaterialId: pkg.id,
+            ActionType: 'PICKUP',
+            Lat: lat,
+            Lng: lng,
+            Timestamp: new Date().toISOString(),
+            Notes: this.actionNotes
           }, courierId, this.currentJourneyId);
         }
       });
@@ -418,15 +452,20 @@ export default {
     },
     processSelectedDropoffs() {
       const courierId = localStorage.getItem('courier_id') || 5;
+      const lat = this.mockPosition ? this.mockPosition.lat : 0;
+      const lng = this.mockPosition ? this.mockPosition.lng : 0;
+      
       this.selectedDropoffPackages.forEach(pkgId => {
         const pkg = this.packages.find(p => p.id === pkgId);
         if(pkg) {
           pkg.status = 'Delivered';
           actionQueue.queueAction({
-            packageId: pkg.id,
-            actionType: 'Delivered',
-            actionTime: new Date().toISOString(),
-            notes: this.actionNotes
+            MaterialId: pkg.id,
+            ActionType: 'DROPOFF',
+            Lat: lat,
+            Lng: lng,
+            Timestamp: new Date().toISOString(),
+            Notes: this.actionNotes
           }, courierId, this.currentJourneyId);
         }
       });
@@ -439,6 +478,7 @@ export default {
         }
         
         telemetry.completeDelivery(0);
+        this.stopGpsTracking();
         
         // Update current location to where we just arrived
         this.currentLocation = this.selectedNextStop;
@@ -450,6 +490,7 @@ export default {
     handleCancelChoice(isConfirmed) {
       if (isConfirmed) {
         telemetry.cancelDelivery(`Rota İptal: ${this.actionNotes}`, 0);
+        this.stopGpsTracking();
         this.resetJourneyState();
       } else {
         this.showConfirmation = false;
@@ -498,6 +539,13 @@ export default {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+.vehicle-select select {
+  background: #222;
+  color: white;
+  border: 1px solid #444;
+  padding: 8px;
+  border-radius: 4px;
 }
 .active-text {
   color: #4CAF50;
