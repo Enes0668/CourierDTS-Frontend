@@ -98,6 +98,9 @@
       <div class="section-block package-form centered-panel full-width">
         <div class="panel-header-flex">
           <h3>📥 Atanmamış Paketler (Havuz)</h3>
+          <div style="font-size: 11px; color: #888; text-align: right;">
+            Debug: Toplam: {{ packages.length }} | Havuz: {{ pendingPool.length }} | Filtrelenmiş: {{ filteredPendingPool.length }}
+          </div>
           <button @click="loadPoolData" class="refresh-btn">🔄 Yenile</button>
         </div>
         
@@ -224,7 +227,7 @@ export default {
       if (!Array.isArray(this.packages)) return [];
       return this.packages.filter(p => {
         const courierId = p.assignedCourierId !== undefined ? p.assignedCourierId : p.AssignedCourierId;
-        return !courierId || courierId === '' || courierId === 0;
+        return !courierId || courierId === '' || courierId == 0 || courierId === 'null' || courierId === '0' || courierId == -1 || courierId === '-1';
       });
     },
     filteredPendingPool() {
