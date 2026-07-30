@@ -145,7 +145,7 @@
       </div>
 
       <!-- GENEL ATANMIŞLAR LİSTESİ -->
-      <div class="section-block package-form centered-panel full-width" style="margin-top: 20px;">
+      <div class="section-block package-form centered-panel full-width">
         <div class="panel-header-flex">
           <h3>📋 Atanmış (Bekleyen) Paketler</h3>
         </div>
@@ -173,7 +173,7 @@
       </div>
 
       <!-- KURYELERİN ÜZERİNDEKİ PAKETLER -->
-      <div class="section-block package-form centered-panel full-width" style="margin-top: 20px;">
+      <div class="section-block package-form centered-panel full-width">
         <div class="panel-header-flex">
           <h3>🚚 Kuryedeki (Taşıma Aşamasında) Paketler</h3>
         </div>
@@ -1056,6 +1056,20 @@ export default {
   flex-grow: 1;
   display: flex;
   overflow: hidden;
+}
+.pool-tab {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  align-content: flex-start;
+  gap: 20px;
+  overflow-y: auto;
+  padding: 20px;
+}
+.pool-tab > .section-block {
+  flex: 1 1 350px;
+  min-width: 300px;
+  max-width: none;
+  margin: 0 !important;
 }
 
 /* Specific Tab Layouts */
