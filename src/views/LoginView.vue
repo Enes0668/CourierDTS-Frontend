@@ -58,18 +58,26 @@ export default {
         });
         
         const data = response.data;
-        localStorage.setItem('jwt_token', data.token);
+        const token = data.token || data.Token;
+        const role = data.role || data.Role || '';
+        const userId = data.userId || data.UserId;
+
+        if (!token) {
+          throw new Error("Token alınamadı. Sunucu yanıtını kontrol edin.");
+        }
+
+        localStorage.setItem('jwt_token', token);
         
         // Backend'den dönen role göre yönlendirme: "Admin" veya "Courier"
-        const roleStr = String(data.role).toLowerCase();
+        const roleStr = String(role).toLowerCase();
         
         if (roleStr === 'admin') {
           localStorage.setItem('user_role', 'admin');
-          localStorage.setItem('admin_id', data.userId || 0);
+          localStorage.setItem('admin_id', userId || 0);
           this.$router.push('/admin');
         } else {
           localStorage.setItem('user_role', 'courier');
-          localStorage.setItem('courier_id', data.userId || 1);
+          localStorage.setItem('courier_id', userId || 1);
           this.$router.push('/courier');
         }
       } catch (error) {
