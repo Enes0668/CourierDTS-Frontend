@@ -16,9 +16,10 @@ export const dataService = {
     }
     try {
       const response = await api.get('/locations');
-      cache.locations = response.data;
+      const data = response.data?.items ? response.data.items : (response.data || []);
+      cache.locations = data;
       cache.locationsTimestamp = now;
-      return response.data;
+      return data;
     } catch (error) {
       console.error("Locations fetch error:", error);
       throw error;
@@ -117,7 +118,11 @@ export const dataService = {
   async getCouriers() {
     try {
       const response = await api.get('/couriers');
-      return response.data.map(c => ({
+      const data = response.data?.items ? response.data.items : (response.data || []);
+      
+      if (!Array.isArray(data)) return [];
+      
+      return data.map(c => ({
         id: c.id || c.userId || c.Id || c.UserId,
         name: c.name || c.username || c.Name || c.Username || c.fullName || c.FullName || 'Bilinmeyen',
         lat: c.lastLat || c.LastLat,
