@@ -56,14 +56,36 @@ export default {
           username: this.username,
           password: this.password
         });
-        
-        const data = response.data;
-        const token = data.token || data.Token;
-        const role = data.role || data.Role || '';
-        const userId = data.userId || data.UserId;
+        let responseData = response.data;
+        if (responseData && responseData.data) {
+          responseData = responseData.data; // Unwrap
+        }
+
+        let token = '';
+        let role = '';
+        let userId = '';
+
+        if (typeof responseData === 'string') {
+          token = responseData;
+        } else if (responseData) {
+          token = responseData.token || responseData.Token;
+          role = responseData.role || responseData.Role || '';
+          userId = responseData.userId || responseData.UserId || '';
+        }
 
         if (!token) {
           throw new Error("Token alınamadı. Sunucu yanıtını kontrol edin.");
+        }
+
+        // If role or userId is missing, try extracting from JWT payload
+        if (!role || !userId) {
+          try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            role = role || payload.role || payload.Role || payload["http://schemas.microsoft.com/ws/2008/06/identity/claims/role"] || '';
+            userId = userId || payload.nameid || payload["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"] || payload.userId || payload.UserId || '';
+          } catch(e) {
+            console.error("JWT Parse Error", e);
+          }
         }
 
         localStorage.setItem('jwt_token', token);
