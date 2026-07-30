@@ -119,16 +119,14 @@
           </div>
           
           <div class="pool-list grid-layout">
-            <div v-for="pkg in filteredPendingPool" :key="pkg.id || pkg.Id" class="pool-item premium-card">
-              <input type="checkbox" :value="pkg.id || pkg.Id" v-model="selectedPoolPackages" class="custom-checkbox" />
-              <div class="pool-info">
-                <div class="pool-header">
-                  <strong>{{ pkg.barcode || pkg.Barcode || 'İsimsiz' }}</strong>
-                  <span class="badge badge-priority">P{{ pkg.priority || pkg.Priority }}</span>
-                </div>
-                <div class="pool-desc">{{ pkg.description || pkg.Description }}</div>
-              </div>
-            </div>
+            <AdminPackageCard
+              v-for="pkg in filteredPendingPool"
+              :key="pkg.id || pkg.Id"
+              :pkg="pkg"
+              type="pool"
+              :selected="selectedPoolPackages.includes(pkg.id || pkg.Id)"
+              @toggle="togglePackageSelection"
+            />
           </div>
         </div>
 
@@ -155,20 +153,13 @@
         </div>
         
         <div v-else class="pool-list grid-layout" style="margin-top: 10px;">
-          <div v-for="pkg in filteredAssignedPendingPool" :key="pkg.id || pkg.Id" class="pool-item premium-card read-only-item pending-border">
-            <div class="pool-info">
-              <div class="pool-header">
-                <strong>{{ pkg.barcode || pkg.Barcode || 'İsimsiz' }}</strong>
-                <span class="badge badge-priority">P{{ pkg.priority || pkg.Priority }}</span>
-              </div>
-              <div class="pool-desc">{{ pkg.description || pkg.Description }}</div>
-              <div class="pool-meta mt-2">
-                <span class="chip chip-warning">
-                  <i class="icon">🛵</i> {{ getCourierName(pkg.assignedCourierId || pkg.AssignedCourierId) }}
-                </span>
-              </div>
-            </div>
-          </div>
+          <AdminPackageCard
+            v-for="pkg in filteredAssignedPendingPool"
+            :key="pkg.id || pkg.Id"
+            :pkg="pkg"
+            type="pending"
+            :courierName="getCourierName(pkg.assignedCourierId || pkg.AssignedCourierId)"
+          />
         </div>
       </div>
 
@@ -183,23 +174,13 @@
         </div>
         
         <div v-else class="pool-list grid-layout" style="margin-top: 10px;">
-          <div v-for="pkg in filteredInTransitPool" :key="pkg.id || pkg.Id" class="pool-item premium-card read-only-item transit-border">
-            <div class="pool-info">
-              <div class="pool-header">
-                <strong>{{ pkg.barcode || pkg.Barcode || 'İsimsiz' }}</strong>
-                <span class="badge badge-priority">P{{ pkg.priority || pkg.Priority }}</span>
-              </div>
-              <div class="pool-desc">{{ pkg.description || pkg.Description }}</div>
-              <div class="pool-meta mt-2 flex-gap">
-                <span class="chip chip-success">
-                  <i class="icon">🚚</i> {{ getCourierName(pkg.assignedCourierId || pkg.AssignedCourierId) }}
-                </span>
-                <span class="chip chip-outline">
-                  {{ pkg.status || pkg.Status }}
-                </span>
-              </div>
-            </div>
-          </div>
+          <AdminPackageCard
+            v-for="pkg in filteredInTransitPool"
+            :key="pkg.id || pkg.Id"
+            :pkg="pkg"
+            type="transit"
+            :courierName="getCourierName(pkg.assignedCourierId || pkg.AssignedCourierId)"
+          />
         </div>
       </div>
     </div>
@@ -250,13 +231,14 @@
 </template>
 
 <script>
-import MapView from '../components/MapView.vue';
-import { toast } from '../services/toast';
-import { dataService } from '../services/dataService';
+import { dataService } from '@/services/dataService.js';
+import MapView from '@/components/MapView.vue';
+import AdminPackageCard from '@/components/admin/AdminPackageCard.vue';
+import { toast } from '@/services/toast.js';
 
 export default {
   name: 'AdminDashboard',
-  components: { MapView },
+  components: { MapView, AdminPackageCard },
   data() {
     return {
       activeTab: 'live',
@@ -429,6 +411,15 @@ export default {
       
       if (this.couriers.length === 0) {
         try { this.couriers = await dataService.getCouriers(); } catch (e) { console.warn("Couriers failed"); }
+      }
+    },
+    togglePackageSelection(packageId, isSelected) {
+      if (isSelected) {
+        if (!this.selectedPoolPackages.includes(packageId)) {
+          this.selectedPoolPackages.push(packageId);
+        }
+      } else {
+        this.selectedPoolPackages = this.selectedPoolPackages.filter(id => id !== packageId);
       }
     },
     toggleSelectAllFiltered(event) {
