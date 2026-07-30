@@ -25,16 +25,14 @@
         <button @click="simulateScan('pickup')" class="action-btn scan-btn-global" style="margin-bottom:15px; background-color:#2196F3;">📷 Genel Barkod Okut</button>
 
         <div v-if="packagesToPickup.length === 0" class="no-data">Bu duraktan alınacak paket kalmadı.</div>
-        <div v-for="pkg in packagesToPickup" :key="pkg.id" class="pkg-card" style="display:flex; align-items:center; gap:15px;">
-          <input type="checkbox" :value="pkg.id" v-model="selectedPickupPackages" style="transform: scale(1.5);" />
-          <div style="flex-grow:1;">
-            <div class="pkg-header">
-              <strong>{{ pkg.barcode }}</strong>
-              <span :class="['priority-badge', 'p-' + pkg.priority]">Öncelik: {{ pkg.priority }}</span>
-            </div>
-            <p class="pkg-desc" style="margin:5px 0;">{{ pkg.description }}</p>
-          </div>
-        </div>
+        <CourierPackageCard
+          v-for="pkg in packagesToPickup"
+          :key="pkg.id"
+          :pkg="pkg"
+          :isModal="true"
+          :selected="selectedPickupPackages.includes(pkg.id)"
+          @toggle="togglePickupSelection"
+        />
         
         <textarea v-model="actionNotes" placeholder="İşlem notu ekleyin... (Opsiyonel)" class="note-input"></textarea>
         
@@ -53,16 +51,14 @@
         <button @click="simulateScan('dropoff')" class="action-btn scan-btn-global" style="margin-bottom:15px; background-color:#4CAF50;">📷 Genel Barkod Okut</button>
 
         <div v-if="packagesToDropoff.length === 0" class="no-data">Bu durağa verilecek paket kalmadı.</div>
-        <div v-for="pkg in packagesToDropoff" :key="pkg.id" class="pkg-card" style="display:flex; align-items:center; gap:15px;">
-          <input type="checkbox" :value="pkg.id" v-model="selectedDropoffPackages" style="transform: scale(1.5);" />
-          <div style="flex-grow:1;">
-            <div class="pkg-header">
-              <strong>{{ pkg.barcode }}</strong>
-              <span :class="['priority-badge', 'p-' + pkg.priority]">Öncelik: {{ pkg.priority }}</span>
-            </div>
-            <p class="pkg-desc" style="margin:5px 0;">{{ pkg.description }}</p>
-          </div>
-        </div>
+        <CourierPackageCard
+          v-for="pkg in packagesToDropoff"
+          :key="pkg.id"
+          :pkg="pkg"
+          :isModal="true"
+          :selected="selectedDropoffPackages.includes(pkg.id)"
+          @toggle="toggleDropoffSelection"
+        />
         
         <textarea v-model="actionNotes" placeholder="İşlem notu ekleyin... (Opsiyonel)" class="note-input"></textarea>
         
@@ -100,32 +96,28 @@
         <div class="list-section">
           <h3>🎒 Üzerimdeki Paketler ({{ myPackages.length }})</h3>
           <div v-if="myPackages.length === 0" class="no-data">Üzerinizde paket yok.</div>
-          <div v-for="pkg in myPackages" :key="pkg.id" class="pkg-item">
-            <div class="pkg-header">
-              <span class="barcode">{{ pkg.barcode }}</span>
-              <span :class="['priority-badge', 'p-' + pkg.priority]">P{{ pkg.priority }}</span>
-            </div>
-            <div class="pkg-body">
-              <p class="pkg-desc">{{ pkg.description || 'İsimsiz Paket' }}</p>
-              <small>Hedef: <strong>{{ getLocationName(pkg.dropoffLocId) }}</strong></small>
-              <button v-if="pkg.pickupLocId === currentLocation.id" @click="undoPickup(pkg)" class="undo-btn">🔙 Geri Bırak (İptal)</button>
-            </div>
-          </div>
+          <CourierPackageCard
+            v-for="pkg in myPackages"
+            :key="pkg.id"
+            :pkg="pkg"
+            type="my"
+            :targetName="getLocationName(pkg.dropoffLocId)"
+            :showUndo="pkg.pickupLocId === currentLocation.id"
+            @undo="undoPickup"
+          />
         </div>
 
         <div class="list-section">
           <h3>📥 Bekleyen / Teslim Alınacak ({{ pendingPackages.length }})</h3>
           <div v-if="pendingPackages.length === 0" class="no-data">Bekleyen atama yok.</div>
-          <div v-for="pkg in pendingPackages" :key="pkg.id" class="pkg-item">
-            <div class="pkg-header">
-              <span class="barcode">{{ pkg.barcode }}</span>
-              <span :class="['priority-badge', 'p-' + pkg.priority]">P{{ pkg.priority }}</span>
-            </div>
-            <div class="pkg-body">
-              <p class="pkg-desc">{{ pkg.description || 'İsimsiz Paket' }}</p>
-              <small>Rota: <strong>{{ getLocationName(pkg.pickupLocId) }}</strong> ➔ <strong>{{ getLocationName(pkg.dropoffLocId) }}</strong></small>
-            </div>
-          </div>
+          <CourierPackageCard
+            v-for="pkg in pendingPackages"
+            :key="pkg.id"
+            :pkg="pkg"
+            type="pending"
+            :pickupName="getLocationName(pkg.pickupLocId)"
+            :targetName="getLocationName(pkg.dropoffLocId)"
+          />
         </div>
       </div>
     </div>
@@ -185,6 +177,7 @@
 
 <script>
 import MapView from '../components/MapView.vue';
+import CourierPackageCard from '../components/courier/CourierPackageCard.vue';
 import { dataService } from '../services/dataService';
 import { telemetry } from '../services/telemetryServices';
 import { actionQueue } from '../services/actionQueueService';
@@ -192,7 +185,7 @@ import { toast } from '../services/toast';
 
 export default {
   name: 'CourierDashboard',
-  components: { MapView },
+  components: { MapView, CourierPackageCard },
   data() {
     return {
       locations: [],
@@ -448,6 +441,24 @@ export default {
         toast.success(`Kamera ile Okundu: ${unselected.barcode}`);
       } else {
         toast.error("Okunacak/Seçilecek paket kalmadı!");
+      }
+    },
+    togglePickupSelection(packageId, isSelected) {
+      if (isSelected) {
+        if (!this.selectedPickupPackages.includes(packageId)) {
+          this.selectedPickupPackages.push(packageId);
+        }
+      } else {
+        this.selectedPickupPackages = this.selectedPickupPackages.filter(id => id !== packageId);
+      }
+    },
+    toggleDropoffSelection(packageId, isSelected) {
+      if (isSelected) {
+        if (!this.selectedDropoffPackages.includes(packageId)) {
+          this.selectedDropoffPackages.push(packageId);
+        }
+      } else {
+        this.selectedDropoffPackages = this.selectedDropoffPackages.filter(id => id !== packageId);
       }
     },
     processSelectedPickups() {
