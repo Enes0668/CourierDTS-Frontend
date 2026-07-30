@@ -9,6 +9,12 @@ const cache = {
 };
 
 export const dataService = {
+  /**
+   * Tüm lokasyonları (teslimat noktaları, hastaneler vb.) getirir.
+   * Önbellek (cache) mekanizması kullanır. 5 dakika boyunca önbellekten okur.
+   * @param {boolean} forceRefresh - True verilirse önbelleği yok sayıp API'den güncel veriyi çeker.
+   * @returns {Promise<Array>} Lokasyon nesnelerinin listesi.
+   */
   async getLocations(forceRefresh = false) {
     const now = Date.now();
     if (!forceRefresh && cache.locations && (now - cache.locationsTimestamp < cache.CACHE_DURATION)) {
@@ -25,6 +31,11 @@ export const dataService = {
       throw error;
     }
   },
+
+  /**
+   * Sistemdeki tüm paketleri getirir. (Admin yetkisi gerektirebilir).
+   * @returns {Promise<Array>} Paketlerin listesi.
+   */
   async getAllPackages() {
     try {
         const response = await api.get('/packages');
@@ -35,6 +46,11 @@ export const dataService = {
     }
   },
 
+  /**
+   * Belirli bir kuryeye atanmış olan veya henüz havuza düşmüş (atanmamış) paketleri getirir.
+   * @param {number|string} courierId - Paketleri çekilecek kuryenin ID'si.
+   * @returns {Promise<Array>} Kuryenin görebileceği paketlerin listesi.
+   */
   async getMyPackages(courierId) {
     try {
         const response = await api.get(`/packages/mypackages?courierId=${courierId}`);
@@ -45,6 +61,11 @@ export const dataService = {
     }
   },
 
+  /**
+   * Yeni bir paket oluşturur (Admin paneli üzerinden).
+   * @param {Object} payload - Oluşturulacak paketin verileri.
+   * @returns {Promise<Object>} Oluşturulan paketin verisi.
+   */
   async createPackage(payload) {
     try {
       const response = await api.post('/packages', payload);
@@ -55,6 +76,12 @@ export const dataService = {
     }
   },
 
+  /**
+   * Birden fazla paketi toplu olarak bir kuryeye atar.
+   * @param {Array<number|string>} packageIds - Atanacak paketlerin ID listesi.
+   * @param {number|string} courierId - Paketlerin atanacağı kuryenin ID'si.
+   * @returns {Promise<Object>} İşlem sonucu.
+   */
   async assignPackageBulk(packageIds, courierId) {
     try {
       const response = await api.put(`/packages/bulk-assign`, { packageIds, courierId });
@@ -65,6 +92,11 @@ export const dataService = {
     }
   },
 
+  /**
+   * Devam eden bir kurye turunu (journey) tamamlanmış olarak işaretler.
+   * @param {string} journeyId - Tamamlanacak turun ID'si.
+   * @returns {Promise<Object>} İşlem sonucu.
+   */
   async completeJourney(journeyId) {
     try {
       const response = await api.put(`/journeys/${journeyId}/complete`);
@@ -75,11 +107,21 @@ export const dataService = {
     }
   },
 
+  /**
+   * Kurye için yeni bir teslimat turu başlatır.
+   * @param {Object} payload - Tura eklenecek hedefler ve paket ID'lerini içeren nesne.
+   * @returns {Promise<Object>} Başlatılan turun verisi (içinde tourId bulunur).
+   */
   async startJourney(payload) {
     const response = await api.post('/journeys/start', payload);
     return response.data;
   },
 
+  /**
+   * Belirli bir kuryenin geçmişteki tüm turlarını listeler.
+   * @param {number|string} courierId - Turları getirilecek kurye ID'si.
+   * @returns {Promise<Array>} Turların listesi.
+   */
   async getJourneys(courierId) {
     try {
       const response = await api.get(`/journeys?courierId=${courierId}`);
@@ -90,16 +132,26 @@ export const dataService = {
     }
   },
 
+  /**
+   * Bir paketin barkoduna göre kuryenin rotasını kırmızı çizgiyle haritaya çizdirmek için geçmiş rota datasını getirir.
+   * @param {string} barcode - Aranan paketin barkodu.
+   * @returns {Promise<Array>} Paket taşıma sırasındaki ActualPath (koordinat dizisi) verisi.
+   */
   async getTourHistoryByBarcode(barcode) {
     try {
       const response = await api.get(`/packages/route?barcode=${barcode}`);
-      return response.data; // Expected to return array of ActualPaths
+      return response.data;
     } catch (error) {
       console.error("API Error (getTourHistoryByBarcode):", error);
       throw error;
     }
   },
 
+  /**
+   * İlgili turun GPS telemetri (konum geçmişi) verilerini getirir.
+   * @param {string} journeyId - Telemetrisi alınacak turun ID'si.
+   * @returns {Promise<Array>} Koordinat noktalarının listesi.
+   */
   async getTelemetry(journeyId) {
     try {
       const response = await api.get(`/telemetry?journeyId=${journeyId}`);
@@ -110,11 +162,21 @@ export const dataService = {
     }
   },
 
+  /**
+   * İnternet bağlantısı koptuğunda biriken (offline) işlemlerin backend ile senkronize edilmesini sağlar.
+   * @param {Array<Object>} payload - Toplu eylem (pickup/dropoff) nesneleri dizisi.
+   * @returns {Promise<Object>} Senkronizasyon işlem sonucu.
+   */
   async syncActions(payload) {
     const response = await api.post('/packages/syncactions', payload);
     return response.data;
   },
   
+  /**
+   * Sistemdeki tüm kuryeleri getirir. C# backend'den farklı standartlarda gelebilecek casing (camelCase/PascalCase) 
+   * sorunlarına karşı korumalı (robust) bir okuma yapar.
+   * @returns {Promise<Array>} Kurye nesnelerinin normalize edilmiş listesi.
+   */
   async getCouriers() {
     try {
       const response = await api.get('/couriers');
@@ -135,6 +197,11 @@ export const dataService = {
     }
   },
 
+  /**
+   * Belirli bir kuryenin kullanabileceği araçların listesini getirir.
+   * @param {number|string} courierId - Kuryenin ID'si.
+   * @returns {Promise<Array>} Araçların listesi.
+   */
   async getCourierVehicles(courierId) {
     try {
       const response = await api.get(`/courier/vehicles?courierId=${courierId}`);
@@ -145,6 +212,12 @@ export const dataService = {
     }
   },
 
+  /**
+   * Kuryenin kullanacağı aktif aracı günceller.
+   * @param {number|string} courierId - Aracı seçecek kuryenin ID'si.
+   * @param {number|string} vehicleId - Seçilen aracın ID'si.
+   * @returns {Promise<Object>} Güncelleme işlem sonucu.
+   */
   async setCourierActiveVehicle(courierId, vehicleId) {
     try {
       const payload = {
@@ -159,3 +232,4 @@ export const dataService = {
     }
   }
 };
+
