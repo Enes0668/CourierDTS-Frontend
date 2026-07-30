@@ -287,6 +287,7 @@ export default {
         try { 
           let res = await dataService.getAllPackages(); 
           if (res && res.data && Array.isArray(res.data)) this.packages = res.data;
+          else if (res && res.items && Array.isArray(res.items)) this.packages = res.items;
           else if (Array.isArray(res)) this.packages = res;
           else this.packages = [];
         } catch(e){ console.warn(e); this.packages = []; }
@@ -315,6 +316,8 @@ export default {
         // Backend wrapper checks
         if (res && res.data && Array.isArray(res.data)) {
           this.packages = res.data;
+        } else if (res && res.items && Array.isArray(res.items)) {
+          this.packages = res.items;
         } else if (Array.isArray(res)) {
           this.packages = res;
         } else {
@@ -342,9 +345,19 @@ export default {
       }
     },
     async fetchData() {
-      // Periyodik olarak paketleri (ve kurye konumlarını) yenile
-      this.packages = await dataService.getAllPackages();
-      this.couriers = await dataService.getCouriers();
+      try {
+        let res = await dataService.getAllPackages();
+        if (res && res.data && Array.isArray(res.data)) this.packages = res.data;
+        else if (res && res.items && Array.isArray(res.items)) this.packages = res.items;
+        else if (Array.isArray(res)) this.packages = res;
+      } catch(e) {
+        console.warn("Polling packages failed", e);
+      }
+      try {
+        this.couriers = await dataService.getCouriers();
+      } catch(e) {
+        console.warn("Polling couriers failed", e);
+      }
     },
     getLocationName(id) {
       const loc = this.locations.find(l => l.id == id);
