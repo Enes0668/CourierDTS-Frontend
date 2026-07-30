@@ -133,5 +133,29 @@ export const dataService = {
       console.error("Couriers fetch error", error);
       throw error;
     }
+  },
+
+  async getVehicles() {
+    try {
+      const response = await api.get('/vehicles');
+      return response.data?.items ? response.data.items : (response.data || []);
+    } catch (error) {
+      console.error("Vehicles fetch error", error);
+      throw error;
+    }
+  },
+
+  async setCourierActiveVehicle(courierId, vehicleId) {
+    try {
+      const payload = {
+        courierId: parseInt(courierId),
+        vehicleId: parseInt(vehicleId)
+      };
+      const response = await api.put('/courier/active', payload);
+      return response.data;
+    } catch (error) {
+      console.error("Set courier active vehicle error", error);
+      throw error;
+    }
   }
 };

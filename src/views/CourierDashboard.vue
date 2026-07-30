@@ -214,10 +214,7 @@ export default {
       selectedPickupPackages: [],
       selectedDropoffPackages: [],
       currentJourneyId: null,
-      vehicles: [
-        { id: 1, plate: "34 ABC 123", type: "Motosiklet" },
-        { id: 2, plate: "34 DEF 456", type: "Panelvan" }
-      ],
+      vehicles: [],
       activeVehicleId: '',
       gpsWatcherId: null
     }
@@ -248,6 +245,10 @@ export default {
     }
   },
   async mounted() {
+    try {
+      this.vehicles = await dataService.getVehicles();
+    } catch(e) { console.warn("Vehicles fetch failed", e); }
+
     try {
       this.locations = await dataService.getLocations();
       if (this.locations.length > 0) {
@@ -291,8 +292,14 @@ export default {
       return loc ? loc.name : 'Bilinmeyen Konum';
     },
     async updateVehicle() {
-      // Simulate saving active vehicle for courier
-      toast.info("Aktif aracınız güncellendi.");
+      try {
+        const courierId = localStorage.getItem('courier_id') || 1;
+        await dataService.setCourierActiveVehicle(courierId, this.activeVehicleId);
+        toast.info("Aktif aracınız güncellendi.");
+      } catch (e) {
+        console.error(e);
+        toast.error("Araç güncellenirken hata oluştu.");
+      }
     },
     handleTelemetryArrived() {
       if (this.isDeliveryStarted && !this.isDelivered) {
