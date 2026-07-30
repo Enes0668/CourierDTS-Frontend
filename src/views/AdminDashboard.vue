@@ -119,10 +119,13 @@
           </div>
           
           <div class="pool-list grid-layout">
-            <div v-for="pkg in filteredPendingPool" :key="pkg.id || pkg.Id" class="pool-item">
-              <input type="checkbox" :value="pkg.id || pkg.Id" v-model="selectedPoolPackages" />
+            <div v-for="pkg in filteredPendingPool" :key="pkg.id || pkg.Id" class="pool-item premium-card">
+              <input type="checkbox" :value="pkg.id || pkg.Id" v-model="selectedPoolPackages" class="custom-checkbox" />
               <div class="pool-info">
-                <strong>{{ pkg.barcode || pkg.Barcode || 'İsimsiz' }}</strong> (P{{ pkg.priority || pkg.Priority }})
+                <div class="pool-header">
+                  <strong>{{ pkg.barcode || pkg.Barcode || 'İsimsiz' }}</strong>
+                  <span class="badge badge-priority">P{{ pkg.priority || pkg.Priority }}</span>
+                </div>
                 <div class="pool-desc">{{ pkg.description || pkg.Description }}</div>
               </div>
             </div>
@@ -152,12 +155,17 @@
         </div>
         
         <div v-else class="pool-list grid-layout" style="margin-top: 10px;">
-          <div v-for="pkg in filteredAssignedPendingPool" :key="pkg.id || pkg.Id" class="pool-item read-only-item">
+          <div v-for="pkg in filteredAssignedPendingPool" :key="pkg.id || pkg.Id" class="pool-item premium-card read-only-item pending-border">
             <div class="pool-info">
-              <strong>{{ pkg.barcode || pkg.Barcode || 'İsimsiz' }}</strong> (P{{ pkg.priority || pkg.Priority }})
+              <div class="pool-header">
+                <strong>{{ pkg.barcode || pkg.Barcode || 'İsimsiz' }}</strong>
+                <span class="badge badge-priority">P{{ pkg.priority || pkg.Priority }}</span>
+              </div>
               <div class="pool-desc">{{ pkg.description || pkg.Description }}</div>
-              <div style="margin-top: 5px; font-size: 11px; color: #d35400; font-weight: bold;">
-                Atanan Kurye: {{ getCourierName(pkg.assignedCourierId || pkg.AssignedCourierId) }}
+              <div class="pool-meta mt-2">
+                <span class="chip chip-warning">
+                  <i class="icon">🛵</i> {{ getCourierName(pkg.assignedCourierId || pkg.AssignedCourierId) }}
+                </span>
               </div>
             </div>
           </div>
@@ -175,13 +183,20 @@
         </div>
         
         <div v-else class="pool-list grid-layout" style="margin-top: 10px;">
-          <div v-for="pkg in filteredInTransitPool" :key="pkg.id || pkg.Id" class="pool-item read-only-item" style="border-left-color: #27ae60;">
+          <div v-for="pkg in filteredInTransitPool" :key="pkg.id || pkg.Id" class="pool-item premium-card read-only-item transit-border">
             <div class="pool-info">
-              <strong>{{ pkg.barcode || pkg.Barcode || 'İsimsiz' }}</strong> (P{{ pkg.priority || pkg.Priority }})
+              <div class="pool-header">
+                <strong>{{ pkg.barcode || pkg.Barcode || 'İsimsiz' }}</strong>
+                <span class="badge badge-priority">P{{ pkg.priority || pkg.Priority }}</span>
+              </div>
               <div class="pool-desc">{{ pkg.description || pkg.Description }}</div>
-              <div style="margin-top: 5px; font-size: 11px; color: #27ae60; font-weight: bold;">
-                Taşıyan Kurye: {{ getCourierName(pkg.assignedCourierId || pkg.AssignedCourierId) }} <br/>
-                Durum: {{ pkg.status || pkg.Status }}
+              <div class="pool-meta mt-2 flex-gap">
+                <span class="chip chip-success">
+                  <i class="icon">🚚</i> {{ getCourierName(pkg.assignedCourierId || pkg.AssignedCourierId) }}
+                </span>
+                <span class="chip chip-outline">
+                  {{ pkg.status || pkg.Status }}
+                </span>
               </div>
             </div>
           </div>
@@ -875,22 +890,102 @@ export default {
 .pool-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  background: #1e1e1e;
-  padding: 10px;
-  border-radius: 6px;
-  border: 1px solid #333;
+  gap: 12px;
+  background: rgba(30, 30, 30, 0.7);
+  backdrop-filter: blur(10px);
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
-.pool-item input {
-  transform: scale(1.3);
+.pool-item.premium-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 15px rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.pool-item.read-only-item {
+  border-left-width: 4px;
+}
+.pool-item.pending-border {
+  border-left-color: #d35400;
+}
+.pool-item.transit-border {
+  border-left-color: #27ae60;
+}
+.pool-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.pool-header strong {
+  font-size: 1.05rem;
+  color: #fff;
+}
+.badge {
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.badge-priority {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  box-shadow: 0 2px 4px rgba(118, 75, 162, 0.3);
+}
+.pool-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.flex-gap {
+  gap: 8px;
+}
+.mt-2 {
+  margin-top: 8px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 16px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.chip-warning {
+  background: rgba(211, 84, 0, 0.15);
+  color: #e67e22;
+  border: 1px solid rgba(230, 126, 34, 0.3);
+}
+.chip-success {
+  background: rgba(39, 174, 96, 0.15);
+  color: #2ecc71;
+  border: 1px solid rgba(46, 204, 113, 0.3);
+}
+.chip-outline {
+  background: transparent;
+  color: #aaa;
+  border: 1px solid #555;
+}
+.custom-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #667eea;
+}
+.pool-item input[type="checkbox"] {
+  transform: none; /* override old css */
 }
 .pool-info {
   flex-grow: 1;
 }
 .pool-desc {
-  font-size: 12px;
-  color: #aaa;
-  margin-top: 4px;
+  font-size: 13px;
+  color: #bbb;
+  line-height: 1.4;
 }
 .no-data {
   color: #777;
