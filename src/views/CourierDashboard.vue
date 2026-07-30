@@ -246,7 +246,8 @@ export default {
   },
   async mounted() {
     try {
-      this.vehicles = await dataService.getVehicles();
+      const courierId = localStorage.getItem('courier_id') || 1;
+      this.vehicles = await dataService.getCourierVehicles(courierId);
     } catch(e) { console.warn("Vehicles fetch failed", e); }
 
     try {

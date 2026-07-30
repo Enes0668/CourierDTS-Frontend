@@ -135,12 +135,12 @@ export const dataService = {
     }
   },
 
-  async getVehicles() {
+  async getCourierVehicles(courierId) {
     try {
-      const response = await api.get('/vehicles');
+      const response = await api.get(`/courier/vehicles?courierId=${courierId}`);
       return response.data?.items ? response.data.items : (response.data || []);
     } catch (error) {
-      console.error("Vehicles fetch error", error);
+      console.error("Courier vehicles fetch error", error);
       throw error;
     }
   },
@@ -151,7 +151,7 @@ export const dataService = {
         courierId: parseInt(courierId),
         vehicleId: parseInt(vehicleId)
       };
-      const response = await api.put('/courier/active', payload);
+      const response = await api.put('/courier/active-vehicle', payload);
       return response.data;
     } catch (error) {
       console.error("Set courier active vehicle error", error);
