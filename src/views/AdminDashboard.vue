@@ -131,13 +131,60 @@
 
         <div class="assignment-actions" style="margin-top: 15px;">
           <select v-model="selectedAssignCourierId" class="full-width-select">
-            <option value="0">🌍 Genel Atama (Tüm Kuryeler - Havuz)</option>
+            <option value="0">🌐 Genel Atama (Tüm Kuryeler - Havuz)</option>
             <option v-for="c in couriers" :key="c.id" :value="c.id">🛵 {{ c.name }}</option>
           </select>
 
           <button @click="assignSelectedToCourier" class="assign-btn" :disabled="selectedPoolPackages.length === 0">
             Seçilenleri Ata ({{ selectedPoolPackages.length }})
           </button>
+        </div>
+      </div>
+
+      <!-- GENEL ATANMIŞLAR LİSTESİ -->
+      <div class="section-block package-form centered-panel full-width" style="margin-top: 20px;">
+        <div class="panel-header-flex">
+          <h3>📋 Atanmış (Bekleyen) Paketler</h3>
+        </div>
+        
+        <div v-if="filteredAssignedPendingPool.length === 0" class="no-data">
+          Filtreye uygun atanmış ve bekleyen paket yok.
+        </div>
+        
+        <div v-else class="pool-list grid-layout" style="margin-top: 10px;">
+          <div v-for="pkg in filteredAssignedPendingPool" :key="pkg.id || pkg.Id" class="pool-item read-only-item">
+            <div class="pool-info">
+              <strong>{{ pkg.barcode || pkg.Barcode || 'İsimsiz' }}</strong> (P{{ pkg.priority || pkg.Priority }})
+              <div class="pool-desc">{{ pkg.description || pkg.Description }}</div>
+              <div style="margin-top: 5px; font-size: 11px; color: #d35400; font-weight: bold;">
+                Atanan Kurye: {{ getCourierName(pkg.assignedCourierId || pkg.AssignedCourierId) }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- KURYELERİN ÜZERİNDEKİ PAKETLER -->
+      <div class="section-block package-form centered-panel full-width" style="margin-top: 20px;">
+        <div class="panel-header-flex">
+          <h3>🚚 Kuryedeki (Taşıma Aşamasında) Paketler</h3>
+        </div>
+        
+        <div v-if="filteredInTransitPool.length === 0" class="no-data">
+          Filtreye uygun taşınan paket yok.
+        </div>
+        
+        <div v-else class="pool-list grid-layout" style="margin-top: 10px;">
+          <div v-for="pkg in filteredInTransitPool" :key="pkg.id || pkg.Id" class="pool-item read-only-item" style="border-left-color: #27ae60;">
+            <div class="pool-info">
+              <strong>{{ pkg.barcode || pkg.Barcode || 'İsimsiz' }}</strong> (P{{ pkg.priority || pkg.Priority }})
+              <div class="pool-desc">{{ pkg.description || pkg.Description }}</div>
+              <div style="margin-top: 5px; font-size: 11px; color: #27ae60; font-weight: bold;">
+                Taşıyan Kurye: {{ getCourierName(pkg.assignedCourierId || pkg.AssignedCourierId) }} <br/>
+                Durum: {{ pkg.status || pkg.Status }}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -235,6 +282,46 @@ export default {
       const lowerFilter = (this.poolFilterText || '').toLowerCase();
       if (!lowerFilter) return this.pendingPool;
       return this.pendingPool.filter(p => {
+        const barcode = p.barcode || p.Barcode || '';
+        const desc = p.description || p.Description || '';
+        return String(barcode).toLowerCase().includes(lowerFilter) || 
+               String(desc).toLowerCase().includes(lowerFilter);
+      });
+    },
+    assignedPendingPool() {
+      if (!Array.isArray(this.packages)) return [];
+      return this.packages.filter(p => {
+        const courierId = p.assignedCourierId !== undefined ? p.assignedCourierId : p.AssignedCourierId;
+        const isAssigned = courierId && courierId !== '' && courierId != 0 && courierId !== 'null' && courierId !== '0' && courierId != -1 && courierId !== '-1';
+        const status = p.status || p.Status;
+        return isAssigned && status === 'Pending';
+      });
+    },
+    inTransitPool() {
+      if (!Array.isArray(this.packages)) return [];
+      return this.packages.filter(p => {
+        const courierId = p.assignedCourierId !== undefined ? p.assignedCourierId : p.AssignedCourierId;
+        const isAssigned = courierId && courierId !== '' && courierId != 0 && courierId !== 'null' && courierId !== '0' && courierId != -1 && courierId !== '-1';
+        const status = p.status || p.Status;
+        return isAssigned && (status === 'PickedUp' || status === 'InTransit');
+      });
+    },
+    filteredAssignedPendingPool() {
+      if (!Array.isArray(this.assignedPendingPool)) return [];
+      const lowerFilter = (this.poolFilterText || '').toLowerCase();
+      if (!lowerFilter) return this.assignedPendingPool;
+      return this.assignedPendingPool.filter(p => {
+        const barcode = p.barcode || p.Barcode || '';
+        const desc = p.description || p.Description || '';
+        return String(barcode).toLowerCase().includes(lowerFilter) || 
+               String(desc).toLowerCase().includes(lowerFilter);
+      });
+    },
+    filteredInTransitPool() {
+      if (!Array.isArray(this.inTransitPool)) return [];
+      const lowerFilter = (this.poolFilterText || '').toLowerCase();
+      if (!lowerFilter) return this.inTransitPool;
+      return this.inTransitPool.filter(p => {
         const barcode = p.barcode || p.Barcode || '';
         const desc = p.description || p.Description || '';
         return String(barcode).toLowerCase().includes(lowerFilter) || 
@@ -362,6 +449,10 @@ export default {
     getLocationName(id) {
       const loc = this.locations.find(l => l.id == id);
       return loc ? loc.name : 'Bilinmeyen Konum';
+    },
+    getCourierName(id) {
+      const courier = this.couriers.find(c => c.id == id);
+      return courier ? courier.name : 'Bilinmeyen Kurye';
     },
     startPolling() {
       const poll = async () => {
@@ -920,6 +1011,10 @@ export default {
 .grid-layout {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  margin-top: 15px;
   gap: 15px;
+}
+.read-only-item { 
+  border-left: 4px solid #d35400; 
 }
 </style>
