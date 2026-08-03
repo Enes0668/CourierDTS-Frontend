@@ -1,8 +1,16 @@
 import axios from 'axios';
 import router from '@/router';
 
+/**
+ * Merkezi API Yapılandırma Dosyası
+ * 
+ * Bu dosya, backend'e (C# API) atılacak tüm HTTP istekleri için ortak bir Axios örneği (instance) oluşturur.
+ * - Çevresel değişkenlerden (process.env) VUE_APP_API_URL adresini alır.
+ * - Her isteğin başlığına (Header) Authorization: Bearer {token} bilgisini otomatik ekler.
+ * - Backend'den 401 (Unauthorized) hatası dönerse, oturumun süresinin dolduğunu varsayıp kullanıcıyı login'e atar.
+ */
 // Backend doğrudan Enes'in Swagger/API sunucusuna yönlendirildi
-const API_BASE_URL = process.env.VUE_APP_API_URL || 'https://courierdts-backend.onrender.com/api';
+const API_BASE_URL = process.env.VUE_APP_API_URL || 'https://courierdts-backend2.onrender.com/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

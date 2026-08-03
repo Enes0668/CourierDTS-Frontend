@@ -56,20 +56,50 @@ export default {
           username: this.username,
           password: this.password
         });
-        
-        const data = response.data;
-        localStorage.setItem('jwt_token', data.token);
+        let responseData = response.data;
+        if (responseData && responseData.data) {
+          responseData = responseData.data; // Unwrap
+        }
+
+        let token = '';
+        let role = '';
+        let userId = '';
+
+        if (typeof responseData === 'string') {
+          token = responseData;
+        } else if (responseData) {
+          token = responseData.token || responseData.Token;
+          role = responseData.role || responseData.Role || '';
+          userId = responseData.userId || responseData.UserId || '';
+        }
+
+        if (!token) {
+          throw new Error("Token alınamadı. Sunucu yanıtını kontrol edin.");
+        }
+
+        // If role or userId is missing, try extracting from JWT payload
+        if (!role || !userId) {
+          try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            role = role || payload.role || payload.Role || payload["http://schemas.microsoft.com/ws/2008/06/identity/claims/role"] || '';
+            userId = userId || payload.nameid || payload["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"] || payload.userId || payload.UserId || '';
+          } catch(e) {
+            console.error("JWT Parse Error", e);
+          }
+        }
+
+        localStorage.setItem('jwt_token', token);
         
         // Backend'den dönen role göre yönlendirme: "Admin" veya "Courier"
-        const roleStr = String(data.role).toLowerCase();
+        const roleStr = String(role).toLowerCase();
         
         if (roleStr === 'admin') {
           localStorage.setItem('user_role', 'admin');
-          localStorage.setItem('admin_id', data.userId || 0);
+          localStorage.setItem('admin_id', userId || 0);
           this.$router.push('/admin');
         } else {
           localStorage.setItem('user_role', 'courier');
-          localStorage.setItem('courier_id', data.userId || 1);
+          localStorage.setItem('courier_id', userId || 1);
           this.$router.push('/courier');
         }
       } catch (error) {

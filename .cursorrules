@@ -1,0 +1,1 @@
+Bütün UI geliştirmelerinde Mobile-First yaklaşımını izle veya yapılan her arayüzün mobil ekranlara (max-width: 768px) tam uyumlu (responsive) olduğundan kesinlikle emin ol. Grid/Flex yapıları dar ekranlarda alt alta düşmeli (flex-wrap / grid-template-columns vs. ayarlanmalı) ve taşmalara engel olunmalıdır.

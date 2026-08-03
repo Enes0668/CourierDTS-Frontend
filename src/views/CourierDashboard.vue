@@ -25,16 +25,14 @@
         <button @click="simulateScan('pickup')" class="action-btn scan-btn-global" style="margin-bottom:15px; background-color:#2196F3;">📷 Genel Barkod Okut</button>
 
         <div v-if="packagesToPickup.length === 0" class="no-data">Bu duraktan alınacak paket kalmadı.</div>
-        <div v-for="pkg in packagesToPickup" :key="pkg.id" class="pkg-card" style="display:flex; align-items:center; gap:15px;">
-          <input type="checkbox" :value="pkg.id" v-model="selectedPickupPackages" style="transform: scale(1.5);" />
-          <div style="flex-grow:1;">
-            <div class="pkg-header">
-              <strong>{{ pkg.barcode }}</strong>
-              <span :class="['priority-badge', 'p-' + pkg.priority]">Öncelik: {{ pkg.priority }}</span>
-            </div>
-            <p class="pkg-desc" style="margin:5px 0;">{{ pkg.description }}</p>
-          </div>
-        </div>
+        <CourierPackageCard
+          v-for="pkg in packagesToPickup"
+          :key="pkg.id"
+          :pkg="pkg"
+          :isModal="true"
+          :selected="selectedPickupPackages.includes(pkg.id)"
+          @toggle="togglePickupSelection"
+        />
         
         <textarea v-model="actionNotes" placeholder="İşlem notu ekleyin... (Opsiyonel)" class="note-input"></textarea>
         
@@ -53,16 +51,14 @@
         <button @click="simulateScan('dropoff')" class="action-btn scan-btn-global" style="margin-bottom:15px; background-color:#4CAF50;">📷 Genel Barkod Okut</button>
 
         <div v-if="packagesToDropoff.length === 0" class="no-data">Bu durağa verilecek paket kalmadı.</div>
-        <div v-for="pkg in packagesToDropoff" :key="pkg.id" class="pkg-card" style="display:flex; align-items:center; gap:15px;">
-          <input type="checkbox" :value="pkg.id" v-model="selectedDropoffPackages" style="transform: scale(1.5);" />
-          <div style="flex-grow:1;">
-            <div class="pkg-header">
-              <strong>{{ pkg.barcode }}</strong>
-              <span :class="['priority-badge', 'p-' + pkg.priority]">Öncelik: {{ pkg.priority }}</span>
-            </div>
-            <p class="pkg-desc" style="margin:5px 0;">{{ pkg.description }}</p>
-          </div>
-        </div>
+        <CourierPackageCard
+          v-for="pkg in packagesToDropoff"
+          :key="pkg.id"
+          :pkg="pkg"
+          :isModal="true"
+          :selected="selectedDropoffPackages.includes(pkg.id)"
+          @toggle="toggleDropoffSelection"
+        />
         
         <textarea v-model="actionNotes" placeholder="İşlem notu ekleyin... (Opsiyonel)" class="note-input"></textarea>
         
@@ -77,7 +73,7 @@
     <div class="content" v-if="!isDeliveryStarted">
       <div class="selection-card">
         <h3 class="selection-title">📍 Sonraki Durak</h3>
-        <p class="current-loc">Mevcut Konum: <strong>{{ currentLocation.name }}</strong></p>
+        <p class="current-loc">Mevcut Konum: <strong>{{ currentLocation?.name }}</strong></p>
         <div class="input-group">
           <select id="next-stop" v-model="selectedNextStop">
             <option value="" disabled>Gidilecek Konumu Seçin...</option>
@@ -100,32 +96,28 @@
         <div class="list-section">
           <h3>🎒 Üzerimdeki Paketler ({{ myPackages.length }})</h3>
           <div v-if="myPackages.length === 0" class="no-data">Üzerinizde paket yok.</div>
-          <div v-for="pkg in myPackages" :key="pkg.id" class="pkg-item">
-            <div class="pkg-header">
-              <span class="barcode">{{ pkg.barcode }}</span>
-              <span :class="['priority-badge', 'p-' + pkg.priority]">P{{ pkg.priority }}</span>
-            </div>
-            <div class="pkg-body">
-              <p class="pkg-desc">{{ pkg.description || 'İsimsiz Paket' }}</p>
-              <small>Hedef: <strong>{{ getLocationName(pkg.dropoffLocId) }}</strong></small>
-              <button v-if="pkg.pickupLocId === currentLocation.id" @click="undoPickup(pkg)" class="undo-btn">🔙 Geri Bırak (İptal)</button>
-            </div>
-          </div>
+          <CourierPackageCard
+            v-for="pkg in myPackages"
+            :key="pkg.id"
+            :pkg="pkg"
+            type="my"
+            :targetName="getLocationName(pkg.dropoffLocId)"
+            :showUndo="currentLocation && pkg.pickupLocId === currentLocation.id"
+            @undo="undoPickup"
+          />
         </div>
 
         <div class="list-section">
           <h3>📥 Bekleyen / Teslim Alınacak ({{ pendingPackages.length }})</h3>
           <div v-if="pendingPackages.length === 0" class="no-data">Bekleyen atama yok.</div>
-          <div v-for="pkg in pendingPackages" :key="pkg.id" class="pkg-item">
-            <div class="pkg-header">
-              <span class="barcode">{{ pkg.barcode }}</span>
-              <span :class="['priority-badge', 'p-' + pkg.priority]">P{{ pkg.priority }}</span>
-            </div>
-            <div class="pkg-body">
-              <p class="pkg-desc">{{ pkg.description || 'İsimsiz Paket' }}</p>
-              <small>Rota: <strong>{{ getLocationName(pkg.pickupLocId) }}</strong> ➔ <strong>{{ getLocationName(pkg.dropoffLocId) }}</strong></small>
-            </div>
-          </div>
+          <CourierPackageCard
+            v-for="pkg in pendingPackages"
+            :key="pkg.id"
+            :pkg="pkg"
+            type="pending"
+            :pickupName="getLocationName(pkg.pickupLocId)"
+            :targetName="getLocationName(pkg.dropoffLocId)"
+          />
         </div>
       </div>
     </div>
@@ -185,14 +177,16 @@
 
 <script>
 import MapView from '../components/MapView.vue';
+import CourierPackageCard from '../components/courier/CourierPackageCard.vue';
 import { dataService } from '../services/dataService';
 import { telemetry } from '../services/telemetryServices';
 import { actionQueue } from '../services/actionQueueService';
 import { toast } from '../services/toast';
+import { gpsProvider } from '../services/gpsProvider';
 
 export default {
   name: 'CourierDashboard',
-  components: { MapView },
+  components: { MapView, CourierPackageCard },
   data() {
     return {
       locations: [],
@@ -214,10 +208,7 @@ export default {
       selectedPickupPackages: [],
       selectedDropoffPackages: [],
       currentJourneyId: null,
-      vehicles: [
-        { id: 1, plate: "34 ABC 123", type: "Motosiklet" },
-        { id: 2, plate: "34 DEF 456", type: "Panelvan" }
-      ],
+      vehicles: [],
       activeVehicleId: '',
       gpsWatcherId: null
     }
@@ -249,10 +240,15 @@ export default {
   },
   async mounted() {
     try {
+      const courierId = localStorage.getItem('courier_id') || 1;
+      this.vehicles = await dataService.getCourierVehicles(courierId);
+    } catch(e) { console.warn("Vehicles fetch failed", e); }
+
+    try {
       this.locations = await dataService.getLocations();
-      if (this.locations.length > 0) {
-        this.currentLocation = this.locations[0];
-      }
+      // Kuryenin konumunu ilk açılışta körü körüne 0. elemana atamıyoruz.
+      // GPS'ten (startGpsTracking) konum geldiğinde en yakın merkez atanacak.
+      this.currentLocation = null;
     } catch(e) { console.warn("Locations failed", e); }
     
     try {
@@ -264,6 +260,10 @@ export default {
       window.addEventListener('offline', this.updateOnlineStatus);
       window.addEventListener('online', this.updateOnlineStatus);
       window.addEventListener('telemetry_arrived', this.handleTelemetryArrived);
+      
+      // Uygulama açılır açılmaz GPS takibini başlat ki
+      // Başlangıç konumu null iken GPS'ten (autoDetectInitialLocation) bulunsun.
+      this.startGpsTracking();
     } catch(e) { console.warn(e); }
   },
   beforeUnmount() {
@@ -291,35 +291,83 @@ export default {
       return loc ? loc.name : 'Bilinmeyen Konum';
     },
     async updateVehicle() {
-      // Simulate saving active vehicle for courier
-      toast.info("Aktif aracınız güncellendi.");
+      try {
+        const courierId = localStorage.getItem('courier_id') || 1;
+        await dataService.setCourierActiveVehicle(courierId, this.activeVehicleId);
+        toast.info("Aktif aracınız güncellendi.");
+      } catch (e) {
+        console.error(e);
+        toast.error("Araç güncellenirken hata oluştu.");
+      }
     },
     handleTelemetryArrived() {
       if (this.isDeliveryStarted && !this.isDelivered) {
         this.isNearTarget = true;
       }
     },
+    calculateDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371e3; // meters
+      const phi1 = lat1 * Math.PI / 180;
+      const phi2 = lat2 * Math.PI / 180;
+      const deltaPhi = (lat2 - lat1) * Math.PI / 180;
+      const deltaLambda = (lon2 - lon1) * Math.PI / 180;
+
+      const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+                Math.cos(phi1) * Math.cos(phi2) *
+                Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+      return R * c;
+    },
+    autoDetectInitialLocation(lat, lng) {
+      if (this.currentLocation || this.locations.length === 0) return;
+      
+      let closestLoc = null;
+      let minDistance = Infinity;
+      
+      for (const loc of this.locations) {
+        const locLat = loc.latitude || loc.lat;
+        const locLng = loc.longitude || loc.lng;
+        
+        if (locLat && locLng) {
+          const dist = this.calculateDistance(lat, lng, locLat, locLng);
+          if (dist < minDistance) {
+            minDistance = dist;
+            closestLoc = loc;
+          }
+        }
+      }
+      
+      if (closestLoc && minDistance < 5000) { // 5km içindeyse eşleştir
+        this.currentLocation = closestLoc;
+        toast.info(`Başlangıç noktanız GPS ile belirlendi: ${closestLoc.name}`);
+      }
+    },
     startGpsTracking() {
-      if ("geolocation" in navigator) {
-        this.gpsWatcherId = navigator.geolocation.watchPosition(
-          (position) => {
-            const lat = position.coords.latitude;
-            const lng = position.coords.longitude;
-            this.mockPosition = { lat, lng };
-            
-            // Pass coordinate to Telemetry Service which buffers and sends it
-            telemetry.addCoordinate(lat, lng, false);
-          },
-          (error) => console.warn("GPS Hatası:", error),
-          { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
-        );
-      } else {
-        toast.error("Cihazınız GPS desteklemiyor!");
+      this.gpsWatcherId = gpsProvider.watchPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          this.mockPosition = { lat, lng };
+          
+          if (!this.currentLocation && !this.isDeliveryStarted) {
+            this.autoDetectInitialLocation(lat, lng);
+          }
+          
+          // Pass coordinate to Telemetry Service which buffers and sends it
+          telemetry.addCoordinate(lat, lng, false);
+        },
+        (error) => console.warn("GPS Hatası:", error),
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+      );
+      
+      if (!this.gpsWatcherId && !gpsProvider.isSimulating) {
+        toast.error("Cihazınız GPS desteklemiyor veya konum alınamadı!");
       }
     },
     stopGpsTracking() {
       if (this.gpsWatcherId !== null) {
-        navigator.geolocation.clearWatch(this.gpsWatcherId);
+        gpsProvider.clearWatch(this.gpsWatcherId);
         this.gpsWatcherId = null;
       }
     },
@@ -340,6 +388,11 @@ export default {
       }
     },
     async startJourney() {
+      if (!this.currentLocation || !this.selectedNextStop) {
+        toast.error("Yolculuk başlatılamadı: Konum bilgisi eksik.");
+        return;
+      }
+
       try {
         this.isDeliveryStarted = true;
         this.isDelivered = false;
@@ -409,9 +462,6 @@ export default {
           lng: this.currentLocation.longitude || this.currentLocation.lng 
         };
 
-        // Gerçek cihaz GPS takibini başlat
-        this.startGpsTracking();
-
       } catch (error) {
         console.error("API Hatası:", error);
         toast.error("Sistemsel bir hata oluştu.");
@@ -440,6 +490,24 @@ export default {
         toast.success(`Kamera ile Okundu: ${unselected.barcode}`);
       } else {
         toast.error("Okunacak/Seçilecek paket kalmadı!");
+      }
+    },
+    togglePickupSelection(packageId, isSelected) {
+      if (isSelected) {
+        if (!this.selectedPickupPackages.includes(packageId)) {
+          this.selectedPickupPackages.push(packageId);
+        }
+      } else {
+        this.selectedPickupPackages = this.selectedPickupPackages.filter(id => id !== packageId);
+      }
+    },
+    toggleDropoffSelection(packageId, isSelected) {
+      if (isSelected) {
+        if (!this.selectedDropoffPackages.includes(packageId)) {
+          this.selectedDropoffPackages.push(packageId);
+        }
+      } else {
+        this.selectedDropoffPackages = this.selectedDropoffPackages.filter(id => id !== packageId);
       }
     },
     processSelectedPickups() {

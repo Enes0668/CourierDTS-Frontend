@@ -4,9 +4,10 @@
     <div class="top-nav-tabs">
       <h2>👑 Yönetici Paneli</h2>
       <div class="tabs-container">
-        <button :class="{ active: activeTab === 'live' }" @click="setTab('live')">📍 Canlı İzleme</button>
+        <button :class="{ active: activeTab === 'live' }" @click="setTab('live')">📍 Canlı Takip</button>
         <button :class="{ active: activeTab === 'pool' }" @click="setTab('pool')">📦 Paket Havuzu</button>
-        <button :class="{ active: activeTab === 'new' }" @click="setTab('new')">➕ Yeni Paket</button>
+        <button :class="{ active: activeTab === 'new' }" @click="setTab('new')">➕ Yeni Görev</button>
+        <button :class="{ active: activeTab === 'vehicles' }" @click="setTab('vehicles')">🛵 Araç Yönetimi</button>
       </div>
       <button @click="logout" class="logout-btn-top">Güvenli Çıkış</button>
     </div>
@@ -98,6 +99,9 @@
       <div class="section-block package-form centered-panel full-width">
         <div class="panel-header-flex">
           <h3>📥 Atanmamış Paketler (Havuz)</h3>
+          <div style="font-size: 11px; color: #888; text-align: right;">
+            Debug: Toplam: {{ packages.length }} | Havuz: {{ pendingPool.length }} | Filtrelenmiş: {{ filteredPendingPool.length }}
+          </div>
           <button @click="loadPoolData" class="refresh-btn">🔄 Yenile</button>
         </div>
         
@@ -116,25 +120,68 @@
           </div>
           
           <div class="pool-list grid-layout">
-            <div v-for="pkg in filteredPendingPool" :key="pkg.id" class="pool-item">
-            <input type="checkbox" :value="pkg.id" v-model="selectedPoolPackages" />
-            <div class="pool-info">
-              <strong>{{ pkg.barcode || 'İsimsiz' }}</strong> (P{{ pkg.priority }})
-              <div class="pool-desc">{{ pkg.description }}</div>
-            </div>
-          </div>
+            <AdminPackageCard
+              v-for="pkg in filteredPendingPool"
+              :key="pkg.id || pkg.Id"
+              :pkg="pkg"
+              type="pool"
+              :selected="selectedPoolPackages.includes(pkg.id || pkg.Id)"
+              @toggle="togglePackageSelection"
+            />
           </div>
         </div>
 
         <div class="assignment-actions" style="margin-top: 15px;">
           <select v-model="selectedAssignCourierId" class="full-width-select">
-            <option value="0">🌍 Genel Atama (Tüm Kuryeler - Havuz)</option>
+            <option value="0">🌐 Genel Atama (Tüm Kuryeler - Havuz)</option>
             <option v-for="c in couriers" :key="c.id" :value="c.id">🛵 {{ c.name }}</option>
           </select>
 
           <button @click="assignSelectedToCourier" class="assign-btn" :disabled="selectedPoolPackages.length === 0">
             Seçilenleri Ata ({{ selectedPoolPackages.length }})
           </button>
+        </div>
+      </div>
+
+      <!-- GENEL ATANMIŞLAR LİSTESİ -->
+      <div class="section-block package-form centered-panel full-width">
+        <div class="panel-header-flex">
+          <h3>📋 Atanmış (Bekleyen) Paketler</h3>
+        </div>
+        
+        <div v-if="filteredAssignedPendingPool.length === 0" class="no-data">
+          Filtreye uygun atanmış ve bekleyen paket yok.
+        </div>
+        
+        <div v-else class="pool-list grid-layout" style="margin-top: 10px;">
+          <AdminPackageCard
+            v-for="pkg in filteredAssignedPendingPool"
+            :key="pkg.id || pkg.Id"
+            :pkg="pkg"
+            type="pending"
+            :courierName="getCourierName(pkg.assignedCourierId || pkg.AssignedCourierId)"
+          />
+        </div>
+      </div>
+
+      <!-- KURYELERİN ÜZERİNDEKİ PAKETLER -->
+      <div class="section-block package-form centered-panel full-width">
+        <div class="panel-header-flex">
+          <h3>🚚 Kuryedeki (Taşıma Aşamasında) Paketler</h3>
+        </div>
+        
+        <div v-if="filteredInTransitPool.length === 0" class="no-data">
+          Filtreye uygun taşınan paket yok.
+        </div>
+        
+        <div v-else class="pool-list grid-layout" style="margin-top: 10px;">
+          <AdminPackageCard
+            v-for="pkg in filteredInTransitPool"
+            :key="pkg.id || pkg.Id"
+            :pkg="pkg"
+            type="transit"
+            :courierName="getCourierName(pkg.assignedCourierId || pkg.AssignedCourierId)"
+          />
         </div>
       </div>
     </div>
@@ -181,22 +228,82 @@
       </div>
     </div>
 
+    <!-- VEHICLES TAB -->
+    <div class="tab-content vehicles-tab" v-if="activeTab === 'vehicles'">
+      <div class="section-block add-vehicle-section">
+        <h3>🛵 Yeni Araç Ekle</h3>
+        <form @submit.prevent="submitNewVehicle" class="new-vehicle-form">
+          <div class="form-group">
+            <label>Plaka Numarası</label>
+            <input type="text" v-model="newVehicle.plateNumber" placeholder="34 ABC 123" required />
+          </div>
+          
+          <div class="form-group">
+            <label>Araç Tipi</label>
+            <select v-model="newVehicle.vehicleType" required>
+              <option value="" disabled>Seçiniz...</option>
+              <option value="Motosiklet">Motosiklet</option>
+              <option value="Otomobil">Otomobil</option>
+              <option value="Minivan">Minivan</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label>Atanacak Kurye (Opsiyonel)</label>
+            <select v-model="newVehicle.courierId">
+              <option value="">-- Havuza Bırak (Boşta) --</option>
+              <option v-for="c in couriers" :key="c.id" :value="c.id">{{ c.fullName || c.username }}</option>
+            </select>
+          </div>
+          
+          <button type="submit" class="primary-btn" style="align-self: flex-end;">Araç Ekle</button>
+        </form>
+      </div>
+
+      <div class="section-block vehicles-list-section" style="margin-top: 20px;">
+        <h3>📋 Mevcut Araçlar ({{ allVehicles.length }})</h3>
+        <div v-if="allVehicles.length === 0" class="no-data">Sistemde kayıtlı araç yok.</div>
+        <div class="grid-layout">
+          <div v-for="v in allVehicles" :key="v.id" class="pool-item premium-card read-only-item">
+            <div class="pool-info">
+              <div class="pool-header">
+                <strong>{{ v.plateNumber || v.PlateNumber }}</strong>
+                <span class="badge" style="background-color: #607d8b; color: white;">{{ v.vehicleType || v.VehicleType }}</span>
+              </div>
+              <div class="pool-meta mt-2">
+                <span class="chip" :class="(v.courierId || v.CourierId) ? 'chip-success' : 'chip-warning'">
+                  <i class="icon">👤</i> 
+                  {{ (v.courierId || v.CourierId) ? getCourierName(v.courierId || v.CourierId) : 'Atanmamış' }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script>
-import MapView from '../components/MapView.vue';
-import { toast } from '../services/toast';
-import { dataService } from '../services/dataService';
+import { dataService } from '@/services/dataService.js';
+import MapView from '@/components/MapView.vue';
+import AdminPackageCard from '@/components/admin/AdminPackageCard.vue';
+import { toast } from '@/services/toast.js';
 
 export default {
   name: 'AdminDashboard',
-  components: { MapView },
+  components: { MapView, AdminPackageCard },
   data() {
     return {
       activeTab: 'live',
       locations: [],
       couriers: [],
+      allVehicles: [],
+      newVehicle: {
+        plateNumber: '',
+        vehicleType: '',
+        courierId: ''
+      },
       packages: [],
       selectedCourierId: 1,
       selectedAssignCourierId: '0', // 0 means General
@@ -221,15 +328,62 @@ export default {
   },
   computed: {
     pendingPool() {
-      return this.packages.filter(p => !p.assignedCourierId || p.assignedCourierId === '');
+      if (!Array.isArray(this.packages)) return [];
+      return this.packages.filter(p => {
+        const courierId = p.assignedCourierId !== undefined ? p.assignedCourierId : p.AssignedCourierId;
+        return !courierId || courierId === '' || courierId == 0 || courierId === 'null' || courierId === '0' || courierId == -1 || courierId === '-1';
+      });
     },
     filteredPendingPool() {
-      const lowerFilter = this.poolFilterText.toLowerCase();
+      if (!Array.isArray(this.pendingPool)) return [];
+      const lowerFilter = (this.poolFilterText || '').toLowerCase();
       if (!lowerFilter) return this.pendingPool;
-      return this.pendingPool.filter(p => 
-        (p.barcode && p.barcode.toLowerCase().includes(lowerFilter)) ||
-        (p.description && p.description.toLowerCase().includes(lowerFilter))
-      );
+      return this.pendingPool.filter(p => {
+        const barcode = p.barcode || p.Barcode || '';
+        const desc = p.description || p.Description || '';
+        return String(barcode).toLowerCase().includes(lowerFilter) || 
+               String(desc).toLowerCase().includes(lowerFilter);
+      });
+    },
+    assignedPendingPool() {
+      if (!Array.isArray(this.packages)) return [];
+      return this.packages.filter(p => {
+        const courierId = p.assignedCourierId !== undefined ? p.assignedCourierId : p.AssignedCourierId;
+        const isAssigned = courierId && courierId !== '' && courierId != 0 && courierId !== 'null' && courierId !== '0' && courierId != -1 && courierId !== '-1';
+        const status = p.status || p.Status;
+        return isAssigned && status === 'Pending';
+      });
+    },
+    inTransitPool() {
+      if (!Array.isArray(this.packages)) return [];
+      return this.packages.filter(p => {
+        const courierId = p.assignedCourierId !== undefined ? p.assignedCourierId : p.AssignedCourierId;
+        const isAssigned = courierId && courierId !== '' && courierId != 0 && courierId !== 'null' && courierId !== '0' && courierId != -1 && courierId !== '-1';
+        const status = p.status || p.Status;
+        return isAssigned && (status === 'PickedUp' || status === 'InTransit');
+      });
+    },
+    filteredAssignedPendingPool() {
+      if (!Array.isArray(this.assignedPendingPool)) return [];
+      const lowerFilter = (this.poolFilterText || '').toLowerCase();
+      if (!lowerFilter) return this.assignedPendingPool;
+      return this.assignedPendingPool.filter(p => {
+        const barcode = p.barcode || p.Barcode || '';
+        const desc = p.description || p.Description || '';
+        return String(barcode).toLowerCase().includes(lowerFilter) || 
+               String(desc).toLowerCase().includes(lowerFilter);
+      });
+    },
+    filteredInTransitPool() {
+      if (!Array.isArray(this.inTransitPool)) return [];
+      const lowerFilter = (this.poolFilterText || '').toLowerCase();
+      if (!lowerFilter) return this.inTransitPool;
+      return this.inTransitPool.filter(p => {
+        const barcode = p.barcode || p.Barcode || '';
+        const desc = p.description || p.Description || '';
+        return String(barcode).toLowerCase().includes(lowerFilter) || 
+               String(desc).toLowerCase().includes(lowerFilter);
+      });
     },
     isAllFilteredSelected() {
       if (this.filteredPendingPool.length === 0) return false;
@@ -237,10 +391,20 @@ export default {
       return this.filteredPendingPool.every(p => this.selectedPoolPackages.includes(p.id));
     },
     courierPackagesInTransit() {
-      return this.packages.filter(p => p.assignedCourierId === this.selectedCourierId && p.status === 'InTransit');
+      if (!Array.isArray(this.packages)) return [];
+      return this.packages.filter(p => {
+        const courierId = p.assignedCourierId !== undefined ? p.assignedCourierId : p.AssignedCourierId;
+        const status = p.status || p.Status;
+        return courierId === this.selectedCourierId && status === 'InTransit';
+      });
     },
     courierPackagesPending() {
-      return this.packages.filter(p => p.assignedCourierId === this.selectedCourierId && p.status === 'Pending');
+      if (!Array.isArray(this.packages)) return [];
+      return this.packages.filter(p => {
+        const courierId = p.assignedCourierId !== undefined ? p.assignedCourierId : p.AssignedCourierId;
+        const status = p.status || p.Status;
+        return courierId === this.selectedCourierId && status === 'Pending';
+      });
     },
     isFormValid() {
       return this.newPkg.description && 
@@ -263,9 +427,15 @@ export default {
       this.activeTab = tabName;
       
       if (tabName === 'live') {
-        try { this.locations = await dataService.getLocations(); } catch(e){}
-        try { this.packages = await dataService.getAllPackages(); } catch(e){}
-        try { this.couriers = await dataService.getCouriers(); } catch(e){}
+        try { this.locations = await dataService.getLocations(); } catch(e){ console.warn(e); }
+        try { 
+          let res = await dataService.getAllPackages(); 
+          if (res && res.data && Array.isArray(res.data)) this.packages = res.data;
+          else if (res && res.items && Array.isArray(res.items)) this.packages = res.items;
+          else if (Array.isArray(res)) this.packages = res;
+          else this.packages = [];
+        } catch(e){ console.warn(e); this.packages = []; }
+        try { this.couriers = await dataService.getCouriers(); } catch(e){ console.warn(e); }
         this.startPolling();
       } else {
         if (this.pollingTimer) {
@@ -280,14 +450,66 @@ export default {
 
       if (tabName === 'new') {
         if (this.locations.length === 0) {
-          try { this.locations = await dataService.getLocations(); } catch (e) {}
+          try { this.locations = await dataService.getLocations(); } catch (e) { console.warn(e); }
         }
+      }
+
+      if (tabName === 'vehicles') {
+        if (this.couriers.length === 0) {
+          try { this.couriers = await dataService.getCouriers(); } catch (e) { console.warn(e); }
+        }
+        await this.loadVehicles();
+      }
+    },
+    async loadVehicles() {
+      try {
+        this.allVehicles = await dataService.getVehicles();
+      } catch (err) {
+        toast.error("Araçlar yüklenemedi");
+      }
+    },
+    async submitNewVehicle() {
+      try {
+        const payload = { ...this.newVehicle };
+        if (!payload.courierId) {
+          payload.courierId = null;
+        } else {
+          payload.courierId = parseInt(payload.courierId);
+        }
+        await dataService.addVehicle(payload);
+        toast.success("Araç başarıyla eklendi");
+        this.newVehicle = { plateNumber: '', vehicleType: '', courierId: '' };
+        await this.loadVehicles();
+      } catch (err) {
+        toast.error("Araç eklenirken hata oluştu");
       }
     },
     async loadPoolData() {
-      try { this.packages = await dataService.getAllPackages(); } catch (e) { console.warn("Packages failed"); }
+      try { 
+        let res = await dataService.getAllPackages(); 
+        // Backend wrapper checks
+        if (res && res.data && Array.isArray(res.data)) {
+          this.packages = res.data;
+        } else if (res && res.items && Array.isArray(res.items)) {
+          this.packages = res.items;
+        } else if (Array.isArray(res)) {
+          this.packages = res;
+        } else {
+          this.packages = [];
+        }
+      } catch (e) { console.warn("Packages failed"); this.packages = []; }
+      
       if (this.couriers.length === 0) {
         try { this.couriers = await dataService.getCouriers(); } catch (e) { console.warn("Couriers failed"); }
+      }
+    },
+    togglePackageSelection(packageId, isSelected) {
+      if (isSelected) {
+        if (!this.selectedPoolPackages.includes(packageId)) {
+          this.selectedPoolPackages.push(packageId);
+        }
+      } else {
+        this.selectedPoolPackages = this.selectedPoolPackages.filter(id => id !== packageId);
       }
     },
     toggleSelectAllFiltered(event) {
@@ -306,13 +528,27 @@ export default {
       }
     },
     async fetchData() {
-      // Periyodik olarak paketleri (ve kurye konumlarını) yenile
-      this.packages = await dataService.getAllPackages();
-      this.couriers = await dataService.getCouriers();
+      try {
+        let res = await dataService.getAllPackages();
+        if (res && res.data && Array.isArray(res.data)) this.packages = res.data;
+        else if (res && res.items && Array.isArray(res.items)) this.packages = res.items;
+        else if (Array.isArray(res)) this.packages = res;
+      } catch(e) {
+        console.warn("Polling packages failed", e);
+      }
+      try {
+        this.couriers = await dataService.getCouriers();
+      } catch(e) {
+        console.warn("Polling couriers failed", e);
+      }
     },
     getLocationName(id) {
       const loc = this.locations.find(l => l.id == id);
       return loc ? loc.name : 'Bilinmeyen Konum';
+    },
+    getCourierName(id) {
+      const courier = this.couriers.find(c => c.id == id);
+      return courier ? courier.name : 'Bilinmeyen Kurye';
     },
     startPolling() {
       const poll = async () => {
@@ -735,22 +971,102 @@ export default {
 .pool-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  background: #1e1e1e;
-  padding: 10px;
-  border-radius: 6px;
-  border: 1px solid #333;
+  gap: 12px;
+  background: rgba(30, 30, 30, 0.7);
+  backdrop-filter: blur(10px);
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
-.pool-item input {
-  transform: scale(1.3);
+.pool-item.premium-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 15px rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.pool-item.read-only-item {
+  border-left-width: 4px;
+}
+.pool-item.pending-border {
+  border-left-color: #d35400;
+}
+.pool-item.transit-border {
+  border-left-color: #27ae60;
+}
+.pool-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.pool-header strong {
+  font-size: 1.05rem;
+  color: #fff;
+}
+.badge {
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.badge-priority {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  box-shadow: 0 2px 4px rgba(118, 75, 162, 0.3);
+}
+.pool-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.flex-gap {
+  gap: 8px;
+}
+.mt-2 {
+  margin-top: 8px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 16px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.chip-warning {
+  background: rgba(211, 84, 0, 0.15);
+  color: #e67e22;
+  border: 1px solid rgba(230, 126, 34, 0.3);
+}
+.chip-success {
+  background: rgba(39, 174, 96, 0.15);
+  color: #2ecc71;
+  border: 1px solid rgba(46, 204, 113, 0.3);
+}
+.chip-outline {
+  background: transparent;
+  color: #aaa;
+  border: 1px solid #555;
+}
+.custom-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #667eea;
+}
+.pool-item input[type="checkbox"] {
+  transform: none; /* override old css */
 }
 .pool-info {
   flex-grow: 1;
 }
 .pool-desc {
-  font-size: 12px;
-  color: #aaa;
-  margin-top: 4px;
+  font-size: 13px;
+  color: #bbb;
+  line-height: 1.4;
 }
 .no-data {
   color: #777;
@@ -822,13 +1138,27 @@ export default {
   display: flex;
   overflow: hidden;
 }
+.pool-tab {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  align-content: flex-start;
+  gap: 20px;
+  overflow-y: auto;
+  padding: 20px;
+}
+.pool-tab > .section-block {
+  flex: 1 1 350px;
+  min-width: 300px;
+  max-width: none;
+  margin: 0 !important;
+}
 
 /* Specific Tab Layouts */
 .live-tab {
   flex-direction: row;
 }
 
-.pool-tab, .new-tab {
+.pool-tab, .new-tab, .vehicles-tab {
   padding: 20px;
   overflow-y: auto;
   align-items: flex-start;
@@ -867,10 +1197,34 @@ export default {
 .refresh-btn:hover {
   background: #444;
 }
+.primary-btn:hover {
+  background-color: #4338ca;
+}
+
+/* Vehicles Tab Form */
+.new-vehicle-form {
+  display: flex;
+  gap: 15px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.new-vehicle-form .form-group {
+  flex: 1;
+  min-width: 200px;
+}
+.new-vehicle-form .primary-btn {
+  height: 42px;
+  padding: 0 20px;
+  border-radius: 8px;
+}
 
 .grid-layout {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  margin-top: 15px;
   gap: 15px;
+}
+.read-only-item { 
+  border-left: 4px solid #d35400; 
 }
 </style>
