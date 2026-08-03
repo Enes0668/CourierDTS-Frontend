@@ -214,8 +214,23 @@ class TelemetryService {
           event_name: packet.event_name,
           timestamp: packet.timestamp
       });
-      console.log(`[TELEMETRY] ${packet.event_name} başarıyla gönderildi.`);
-      
+
+      // 200 OK, backend'in noktayı gerçekten kaydettiği anlamına gelmez: journey_id
+      // aktif (InProgress) bir sefere ait değilse backend sessizce storedCount:0 döner.
+      const storedCount = response.data ? response.data.storedCount : undefined;
+      const sentCount = (packet.payload && Array.isArray(packet.payload.actual_path_segment))
+        ? packet.payload.actual_path_segment.length
+        : 0;
+
+      if (typeof storedCount === 'number' && storedCount < sentCount) {
+        console.warn(
+          `[TELEMETRY] ${packet.event_name} gönderildi ama backend ${sentCount} noktadan yalnızca ${storedCount} tanesini kaydetti (journey_id=${packet.context.journey_id} aktif/geçerli olmayabilir).`,
+          packet.context
+        );
+      } else {
+        console.log(`[TELEMETRY] ${packet.event_name} başarıyla gönderildi (storedCount: ${storedCount}).`);
+      }
+
       if (response.data && response.data.isArrived) {
         window.dispatchEvent(new CustomEvent('telemetry_arrived'));
       }

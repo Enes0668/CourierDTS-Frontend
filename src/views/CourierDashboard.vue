@@ -508,48 +508,68 @@ export default {
         this.selectedDropoffPackages = this.selectedDropoffPackages.filter(id => id !== packageId);
       }
     },
-    processSelectedPickups() {
+    async processSelectedPickups() {
       const courierId = localStorage.getItem('courier_id') || 5;
       const lat = this.mockPosition ? this.mockPosition.lat : 0;
       const lng = this.mockPosition ? this.mockPosition.lng : 0;
-      
-      this.selectedPickupPackages.forEach(pkgId => {
+      const arrivalLocationId = this.selectedNextStop.id;
+
+      const failedBarcodes = [];
+      for (const pkgId of this.selectedPickupPackages) {
         const pkg = this.packages.find(p => p.id === pkgId);
-        if(pkg) {
+        if (!pkg) continue;
+        const success = await actionQueue.queueAction({
+          packageId: pkg.id,
+          locationId: arrivalLocationId,
+          latitude: lat,
+          longitude: lng,
+          actionType: 'PickedUp',
+          actionTime: new Date().toISOString(),
+          notes: this.actionNotes
+        }, courierId, this.currentJourneyId);
+
+        if (success) {
           pkg.status = 'InTransit';
-          actionQueue.queueAction({
-            packageId: pkg.id,
-            locationId: this.currentLocation.id,
-            latitude: lat,
-            longitude: lng,
-            actionType: 'PickedUp',
-            actionTime: new Date().toISOString(),
-            notes: this.actionNotes
-          }, courierId, this.currentJourneyId);
+        } else {
+          failedBarcodes.push(pkg.barcode || pkg.id);
         }
-      });
+      }
+
+      if (failedBarcodes.length > 0) {
+        toast.error(`Şu paketler senkronize edilemedi, bağlantı gelince tekrar denenecek: ${failedBarcodes.join(', ')}`);
+      }
       this.closeModals();
     },
-    processSelectedDropoffs() {
+    async processSelectedDropoffs() {
       const courierId = localStorage.getItem('courier_id') || 5;
       const lat = this.mockPosition ? this.mockPosition.lat : 0;
       const lng = this.mockPosition ? this.mockPosition.lng : 0;
-      
-      this.selectedDropoffPackages.forEach(pkgId => {
+      const arrivalLocationId = this.selectedNextStop.id;
+
+      const failedBarcodes = [];
+      for (const pkgId of this.selectedDropoffPackages) {
         const pkg = this.packages.find(p => p.id === pkgId);
-        if(pkg) {
+        if (!pkg) continue;
+        const success = await actionQueue.queueAction({
+          packageId: pkg.id,
+          locationId: arrivalLocationId,
+          latitude: lat,
+          longitude: lng,
+          actionType: 'Delivered',
+          actionTime: new Date().toISOString(),
+          notes: this.actionNotes
+        }, courierId, this.currentJourneyId);
+
+        if (success) {
           pkg.status = 'Delivered';
-          actionQueue.queueAction({
-            packageId: pkg.id,
-            locationId: this.currentLocation.id,
-            latitude: lat,
-            longitude: lng,
-            actionType: 'Delivered',
-            actionTime: new Date().toISOString(),
-            notes: this.actionNotes
-          }, courierId, this.currentJourneyId);
+        } else {
+          failedBarcodes.push(pkg.barcode || pkg.id);
         }
-      });
+      }
+
+      if (failedBarcodes.length > 0) {
+        toast.error(`Şu paketler senkronize edilemedi, bağlantı gelince tekrar denenecek: ${failedBarcodes.join(', ')}`);
+      }
       this.closeModals();
     },
     async endJourneyAtStop() {
