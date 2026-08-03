@@ -252,7 +252,7 @@
             <label>Atanacak Kurye (Opsiyonel)</label>
             <select v-model="newVehicle.courierId">
               <option value="">-- Havuza Bırak (Boşta) --</option>
-              <option v-for="c in couriers" :key="c.id" :value="c.id">{{ c.fullName || c.username }}</option>
+              <option v-for="c in couriers" :key="c.id" :value="c.id">{{ c.name }}</option>
             </select>
           </div>
           
@@ -565,8 +565,8 @@ export default {
 
           // Fetch active route for selected courier
           const journeys = await dataService.getJourneys(this.selectedCourierId);
-          // Assuming backend returns an array and active journey is the latest or has status 'Active'
-          const activeJourney = journeys.find(j => j.status === 'Active') || journeys[journeys.length - 1];
+          // JourneyStatus enum'ında "Active" yok; devam eden sefer "InProgress"tir.
+          const activeJourney = journeys.find(j => j.status === 'InProgress') || journeys[journeys.length - 1];
           if (activeJourney) {
             const telemetryData = await dataService.getTelemetry(activeJourney.id);
             this.activeCourierRoute = telemetryData;

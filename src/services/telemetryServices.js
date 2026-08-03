@@ -182,10 +182,25 @@ class TelemetryService {
     const color = eventName === 'SYSTEM_ERROR' ? 'red' : 'green';
     console.log(`%c[${eventName}]`, `color: ${color}; font-weight: bold;`, packet);
 
-    this._sendApiRequest(packet);
+    // Backend'deki POST /telemetry/batch ucu yalnızca payload.actual_path_segment
+    // (GPS rota noktaları) içeren paketleri işler; SYSTEM_ERROR, DELIVERY_STARTED,
+    // DELIVERY_ARRIVED, DELIVERY_COMPLETED, DELIVERY_CANCELLED gibi diğer olaylar
+    // şemaya uymadığından sunucuda saklanmıyor. Bu event'ler yerel logda kalır,
+    // API'ye gönderilmez.
+    if (payload && Object.prototype.hasOwnProperty.call(payload, 'actual_path_segment')) {
+      this._sendApiRequest(packet);
+    }
   }
 
   async _sendApiRequest(packet) {
+    // context.courier_id / journey_id backend'de nullable olmayan int'tir;
+    // henüz bir sefer başlamadan (setContext çağrılmadan) gönderilirse
+    // deserialization hatasına yol açar, bu yüzden gönderim öncesi doğrulanır.
+    if (!packet.context || packet.context.courier_id == null || packet.context.journey_id == null) {
+      console.warn('[TELEMETRY] Aktif kurye/sefer bağlamı yok, paket gönderilmiyor:', packet.event_name);
+      return;
+    }
+
     if (!navigator.onLine) {
       console.warn('[TELEMETRY] İnternet yok! Paket yedekleniyor...', packet.event_name);
       this._saveToOfflineBackup(packet);

@@ -34,12 +34,29 @@ export const dataService = {
 
   /**
    * Sistemdeki tüm paketleri getirir. (Admin yetkisi gerektirebilir).
+   * Backend bu uçtan sayfalanmış (PagedResult, varsayılan pageSize 50) yanıt döner;
+   * gerçekten tüm kayıtları almak için totalCount'a ulaşana kadar sayfalar gezilir.
    * @returns {Promise<Array>} Paketlerin listesi.
    */
   async getAllPackages() {
     try {
-        const response = await api.get('/packages');
-        return response.data;
+        const pageSize = 200; // Backend'in izin verdiği azami sayfa boyutu
+        let page = 1;
+        let items = [];
+        let totalCount = Infinity;
+
+        while (items.length < totalCount) {
+          const response = await api.get('/packages', { params: { page, pageSize } });
+          const data = response.data || {};
+          const pageItems = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
+          if (pageItems.length === 0) break;
+
+          items = items.concat(pageItems);
+          totalCount = typeof data.totalCount === 'number' ? data.totalCount : items.length;
+          page += 1;
+        }
+
+        return items;
     } catch (error) {
         console.error("API Error (getAllPackages):", error);
         throw error;
@@ -108,9 +125,24 @@ export const dataService = {
   },
 
   /**
+   * Devam eden bir kurye turunu (journey) iptal eder.
+   * @param {string} journeyId - İptal edilecek turun ID'si.
+   * @returns {Promise<Object>} İşlem sonucu.
+   */
+  async cancelJourney(journeyId) {
+    try {
+      const response = await api.put(`/journeys/${journeyId}/cancel`);
+      return response.data;
+    } catch (error) {
+      console.error("API Error (cancelJourney):", error);
+      throw error;
+    }
+  },
+
+  /**
    * Kurye için yeni bir teslimat turu başlatır.
-   * @param {Object} payload - Tura eklenecek hedefler ve paket ID'lerini içeren nesne.
-   * @returns {Promise<Object>} Başlatılan turun verisi (içinde tourId bulunur).
+   * @param {Object} payload - { courierId, endLocationId, materialIds, plannedPath, plannedDistanceMeters }
+   * @returns {Promise<Object>} Başlatılan turun verisi (içinde journeyId bulunur).
    */
   async startJourney(payload) {
     const response = await api.post('/journeys/start', payload);
@@ -119,13 +151,14 @@ export const dataService = {
 
   /**
    * Belirli bir kuryenin geçmişteki tüm turlarını listeler.
+   * Backend bu uçtan sayfalanmış (PagedResult) yanıt döner, burada items dizisine açılır.
    * @param {number|string} courierId - Turları getirilecek kurye ID'si.
    * @returns {Promise<Array>} Turların listesi.
    */
   async getJourneys(courierId) {
     try {
       const response = await api.get(`/journeys?courierId=${courierId}`);
-      return response.data;
+      return response.data?.items ? response.data.items : (response.data || []);
     } catch (error) {
       console.error("API Error (getJourneys):", error);
       throw error;
@@ -257,6 +290,26 @@ export const dataService = {
       return response.data;
     } catch (error) {
       console.error("Set courier active vehicle error", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Kuryenin vardiya durumunu (online/offline) değiştirir.
+   * @param {number|string} courierId - Kuryenin ID'si.
+   * @param {boolean} isActive - true = vardiyada, false = vardiya dışı.
+   * @returns {Promise<Object>} Güncelleme işlem sonucu.
+   */
+  async setCourierActive(courierId, isActive) {
+    try {
+      const payload = {
+        courierId: parseInt(courierId),
+        isActive: Boolean(isActive)
+      };
+      const response = await api.put('/courier/active', payload);
+      return response.data;
+    } catch (error) {
+      console.error("Set courier active error", error);
       throw error;
     }
   }
