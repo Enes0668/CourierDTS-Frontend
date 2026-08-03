@@ -4,15 +4,35 @@
     <p class="desc">Veritabanındaki merkezler arasından seçim yapıp, OSRM (Leaflet Altyapısı) üzerinden gerçek yol haritasını çekerek sahte GPS verisi üretir.</p>
 
     <div class="card">
-      <h3>Bağlam (Context)</h3>
-      <div class="input-row">
-        <label>Kurye ID:</label>
-        <input type="number" v-model="courierId" />
+      <h3>🌍 Global Simülasyon Ayarları</h3>
+      
+      <div class="input-row" style="margin-bottom: 20px;">
+        <label>Simülasyon Modu:</label>
+        <button 
+          @click="toggleSimulationMode" 
+          class="btn" 
+          :class="isGlobalSimulationOn ? 'success' : 'danger'"
+          style="flex:none; padding: 10px 20px;"
+        >
+          {{ isGlobalSimulationOn ? 'AÇIK (Kurye sahte GPS dinliyor)' : 'KAPALI (Gerçek donanım)' }}
+        </button>
       </div>
+
       <div class="input-row">
-        <label>Sefer (Tour/Journey) ID:</label>
-        <input type="number" v-model="journeyId" />
+        <label>Başlangıca Işınla:</label>
+        <select v-model="teleportLocation" style="flex: 2;">
+          <option value="" disabled>Lütfen Merkez Seçin...</option>
+          <option v-for="loc in locations" :key="'t-'+loc.id" :value="loc">
+            {{ loc.name }}
+          </option>
+        </select>
+        <button @click="teleportCourier" :disabled="!teleportLocation" class="btn primary" style="flex: 1; margin-left: 10px;">
+          Işınla 🚀
+        </button>
       </div>
+      <p style="font-size: 12px; color: #666; margin-left: 160px; margin-top: -10px;">
+        Seçilen merkezin koordinatlarını doğrudan LocalStorage'a yazar.
+      </p>
     </div>
 
     <div class="card">
@@ -65,7 +85,6 @@
 </template>
 
 <script>
-import { telemetry } from '../services/telemetryServices';
 import { dataService } from '../services/dataService';
 
 export default {
@@ -76,8 +95,8 @@ export default {
       startLocation: '',
       endLocation: '',
       
-      courierId: 1,
-      journeyId: 999,
+      isGlobalSimulationOn: localStorage.getItem('SIMULATION_MODE') === 'true',
+      teleportLocation: '',
       speedMultiplier: 1,
       
       isSimulating: false,
@@ -113,6 +132,20 @@ export default {
     }
   },
   methods: {
+    toggleSimulationMode() {
+      this.isGlobalSimulationOn = !this.isGlobalSimulationOn;
+      localStorage.setItem('SIMULATION_MODE', this.isGlobalSimulationOn.toString());
+      this.addLog(`Global Simülasyon Modu: ${this.isGlobalSimulationOn ? 'AÇIK' : 'KAPALI'}`);
+    },
+    teleportCourier() {
+      if (this.teleportLocation) {
+        const lat = this.teleportLocation.latitude || this.teleportLocation.lat;
+        const lng = this.teleportLocation.longitude || this.teleportLocation.lng;
+        localStorage.setItem('SIMULATED_LOCATION', JSON.stringify({ lat, lng }));
+        this.addLog(`${this.teleportLocation.name} konumuna ışınlandı.`);
+        alert("Başlangıç konumu ayarlandı! Kurye ekranı bu konumu okuyacaktır.");
+      }
+    },
     addLog(msg) {
       this.logs.unshift(`[${new Date().toLocaleTimeString()}] ${msg}`);
       if(this.logs.length > 100) this.logs.pop();
@@ -125,9 +158,6 @@ export default {
       this.routeCoordinates = [];
       this.logs = []; // Temizle
       
-      // 1. Context Ayarla
-      telemetry.setContext(this.courierId, this.journeyId);
-      this.addLog(`Context ayarlandı: Kurye ${this.courierId}, Sefer ${this.journeyId}`);
       this.addLog("OSRM'den gerçek rota hesaplanıyor...");
 
       // 2. OSRM API'sinden Gerçek Yol Koordinatlarını Çek
@@ -173,9 +203,8 @@ export default {
         const currentLng = point[0];
         const currentLat = point[1];
         
-        // telemetry.addCoordinate(lat, lng, isFromMockProvider)
-        // Ana sisteme hiçbir yan etkisi yoktur, sadece havuzuna sahte veri atar.
-        telemetry.addCoordinate(currentLat, currentLng, true);
+        // Kurye ekranı (gpsProvider) buradan okuyacak
+        localStorage.setItem('SIMULATED_LOCATION', JSON.stringify({ lat: currentLat, lng: currentLng }));
         this.addLog(`Konum yollanıyor: ${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`);
         
         this.currentStep++;

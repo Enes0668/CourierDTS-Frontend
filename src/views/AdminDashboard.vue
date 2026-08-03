@@ -4,9 +4,10 @@
     <div class="top-nav-tabs">
       <h2>👑 Yönetici Paneli</h2>
       <div class="tabs-container">
-        <button :class="{ active: activeTab === 'live' }" @click="setTab('live')">📍 Canlı İzleme</button>
+        <button :class="{ active: activeTab === 'live' }" @click="setTab('live')">📍 Canlı Takip</button>
         <button :class="{ active: activeTab === 'pool' }" @click="setTab('pool')">📦 Paket Havuzu</button>
-        <button :class="{ active: activeTab === 'new' }" @click="setTab('new')">➕ Yeni Paket</button>
+        <button :class="{ active: activeTab === 'new' }" @click="setTab('new')">➕ Yeni Görev</button>
+        <button :class="{ active: activeTab === 'vehicles' }" @click="setTab('vehicles')">🛵 Araç Yönetimi</button>
       </div>
       <button @click="logout" class="logout-btn-top">Güvenli Çıkış</button>
     </div>
@@ -227,6 +228,59 @@
       </div>
     </div>
 
+    <!-- VEHICLES TAB -->
+    <div class="tab-content vehicles-tab" v-if="activeTab === 'vehicles'">
+      <div class="section-block add-vehicle-section">
+        <h3>🛵 Yeni Araç Ekle</h3>
+        <form @submit.prevent="submitNewVehicle" class="new-vehicle-form">
+          <div class="form-group">
+            <label>Plaka Numarası</label>
+            <input type="text" v-model="newVehicle.plateNumber" placeholder="34 ABC 123" required />
+          </div>
+          
+          <div class="form-group">
+            <label>Araç Tipi</label>
+            <select v-model="newVehicle.vehicleType" required>
+              <option value="" disabled>Seçiniz...</option>
+              <option value="Motosiklet">Motosiklet</option>
+              <option value="Otomobil">Otomobil</option>
+              <option value="Minivan">Minivan</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label>Atanacak Kurye (Opsiyonel)</label>
+            <select v-model="newVehicle.courierId">
+              <option value="">-- Havuza Bırak (Boşta) --</option>
+              <option v-for="c in couriers" :key="c.id" :value="c.id">{{ c.fullName || c.username }}</option>
+            </select>
+          </div>
+          
+          <button type="submit" class="primary-btn" style="align-self: flex-end;">Araç Ekle</button>
+        </form>
+      </div>
+
+      <div class="section-block vehicles-list-section" style="margin-top: 20px;">
+        <h3>📋 Mevcut Araçlar ({{ allVehicles.length }})</h3>
+        <div v-if="allVehicles.length === 0" class="no-data">Sistemde kayıtlı araç yok.</div>
+        <div class="grid-layout">
+          <div v-for="v in allVehicles" :key="v.id" class="pool-item premium-card read-only-item">
+            <div class="pool-info">
+              <div class="pool-header">
+                <strong>{{ v.plateNumber || v.PlateNumber }}</strong>
+                <span class="badge" style="background-color: #607d8b; color: white;">{{ v.vehicleType || v.VehicleType }}</span>
+              </div>
+              <div class="pool-meta mt-2">
+                <span class="chip" :class="(v.courierId || v.CourierId) ? 'chip-success' : 'chip-warning'">
+                  <i class="icon">👤</i> 
+                  {{ (v.courierId || v.CourierId) ? getCourierName(v.courierId || v.CourierId) : 'Atanmamış' }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -244,6 +298,12 @@ export default {
       activeTab: 'live',
       locations: [],
       couriers: [],
+      allVehicles: [],
+      newVehicle: {
+        plateNumber: '',
+        vehicleType: '',
+        courierId: ''
+      },
       packages: [],
       selectedCourierId: 1,
       selectedAssignCourierId: '0', // 0 means General
@@ -392,6 +452,36 @@ export default {
         if (this.locations.length === 0) {
           try { this.locations = await dataService.getLocations(); } catch (e) { console.warn(e); }
         }
+      }
+
+      if (tabName === 'vehicles') {
+        if (this.couriers.length === 0) {
+          try { this.couriers = await dataService.getCouriers(); } catch (e) { console.warn(e); }
+        }
+        await this.loadVehicles();
+      }
+    },
+    async loadVehicles() {
+      try {
+        this.allVehicles = await dataService.getVehicles();
+      } catch (err) {
+        toast.error("Araçlar yüklenemedi");
+      }
+    },
+    async submitNewVehicle() {
+      try {
+        const payload = { ...this.newVehicle };
+        if (!payload.courierId) {
+          payload.courierId = null;
+        } else {
+          payload.courierId = parseInt(payload.courierId);
+        }
+        await dataService.addVehicle(payload);
+        toast.success("Araç başarıyla eklendi");
+        this.newVehicle = { plateNumber: '', vehicleType: '', courierId: '' };
+        await this.loadVehicles();
+      } catch (err) {
+        toast.error("Araç eklenirken hata oluştu");
       }
     },
     async loadPoolData() {
@@ -1068,7 +1158,7 @@ export default {
   flex-direction: row;
 }
 
-.pool-tab, .new-tab {
+.pool-tab, .new-tab, .vehicles-tab {
   padding: 20px;
   overflow-y: auto;
   align-items: flex-start;
@@ -1106,6 +1196,26 @@ export default {
 }
 .refresh-btn:hover {
   background: #444;
+}
+.primary-btn:hover {
+  background-color: #4338ca;
+}
+
+/* Vehicles Tab Form */
+.new-vehicle-form {
+  display: flex;
+  gap: 15px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.new-vehicle-form .form-group {
+  flex: 1;
+  min-width: 200px;
+}
+.new-vehicle-form .primary-btn {
+  height: 42px;
+  padding: 0 20px;
+  border-radius: 8px;
 }
 
 .grid-layout {

@@ -73,7 +73,7 @@
     <div class="content" v-if="!isDeliveryStarted">
       <div class="selection-card">
         <h3 class="selection-title">📍 Sonraki Durak</h3>
-        <p class="current-loc">Mevcut Konum: <strong>{{ currentLocation.name }}</strong></p>
+        <p class="current-loc">Mevcut Konum: <strong>{{ currentLocation?.name }}</strong></p>
         <div class="input-group">
           <select id="next-stop" v-model="selectedNextStop">
             <option value="" disabled>Gidilecek Konumu Seçin...</option>
@@ -102,7 +102,7 @@
             :pkg="pkg"
             type="my"
             :targetName="getLocationName(pkg.dropoffLocId)"
-            :showUndo="pkg.pickupLocId === currentLocation.id"
+            :showUndo="currentLocation && pkg.pickupLocId === currentLocation.id"
             @undo="undoPickup"
           />
         </div>
@@ -182,6 +182,7 @@ import { dataService } from '../services/dataService';
 import { telemetry } from '../services/telemetryServices';
 import { actionQueue } from '../services/actionQueueService';
 import { toast } from '../services/toast';
+import { gpsProvider } from '../services/gpsProvider';
 
 export default {
   name: 'CourierDashboard',
@@ -245,9 +246,9 @@ export default {
 
     try {
       this.locations = await dataService.getLocations();
-      if (this.locations.length > 0) {
-        this.currentLocation = this.locations[0];
-      }
+      // Kuryenin konumunu ilk açılışta körü körüne 0. elemana atamıyoruz.
+      // GPS'ten (startGpsTracking) konum geldiğinde en yakın merkez atanacak.
+      this.currentLocation = null;
     } catch(e) { console.warn("Locations failed", e); }
     
     try {
@@ -259,6 +260,10 @@ export default {
       window.addEventListener('offline', this.updateOnlineStatus);
       window.addEventListener('online', this.updateOnlineStatus);
       window.addEventListener('telemetry_arrived', this.handleTelemetryArrived);
+      
+      // Uygulama açılır açılmaz GPS takibini başlat ki
+      // Başlangıç konumu null iken GPS'ten (autoDetectInitialLocation) bulunsun.
+      this.startGpsTracking();
     } catch(e) { console.warn(e); }
   },
   beforeUnmount() {
@@ -300,27 +305,69 @@ export default {
         this.isNearTarget = true;
       }
     },
+    calculateDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371e3; // meters
+      const phi1 = lat1 * Math.PI / 180;
+      const phi2 = lat2 * Math.PI / 180;
+      const deltaPhi = (lat2 - lat1) * Math.PI / 180;
+      const deltaLambda = (lon2 - lon1) * Math.PI / 180;
+
+      const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+                Math.cos(phi1) * Math.cos(phi2) *
+                Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+      return R * c;
+    },
+    autoDetectInitialLocation(lat, lng) {
+      if (this.currentLocation || this.locations.length === 0) return;
+      
+      let closestLoc = null;
+      let minDistance = Infinity;
+      
+      for (const loc of this.locations) {
+        const locLat = loc.latitude || loc.lat;
+        const locLng = loc.longitude || loc.lng;
+        
+        if (locLat && locLng) {
+          const dist = this.calculateDistance(lat, lng, locLat, locLng);
+          if (dist < minDistance) {
+            minDistance = dist;
+            closestLoc = loc;
+          }
+        }
+      }
+      
+      if (closestLoc && minDistance < 5000) { // 5km içindeyse eşleştir
+        this.currentLocation = closestLoc;
+        toast.info(`Başlangıç noktanız GPS ile belirlendi: ${closestLoc.name}`);
+      }
+    },
     startGpsTracking() {
-      if ("geolocation" in navigator) {
-        this.gpsWatcherId = navigator.geolocation.watchPosition(
-          (position) => {
-            const lat = position.coords.latitude;
-            const lng = position.coords.longitude;
-            this.mockPosition = { lat, lng };
-            
-            // Pass coordinate to Telemetry Service which buffers and sends it
-            telemetry.addCoordinate(lat, lng, false);
-          },
-          (error) => console.warn("GPS Hatası:", error),
-          { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
-        );
-      } else {
-        toast.error("Cihazınız GPS desteklemiyor!");
+      this.gpsWatcherId = gpsProvider.watchPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          this.mockPosition = { lat, lng };
+          
+          if (!this.currentLocation && !this.isDeliveryStarted) {
+            this.autoDetectInitialLocation(lat, lng);
+          }
+          
+          // Pass coordinate to Telemetry Service which buffers and sends it
+          telemetry.addCoordinate(lat, lng, false);
+        },
+        (error) => console.warn("GPS Hatası:", error),
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+      );
+      
+      if (!this.gpsWatcherId && !gpsProvider.isSimulating) {
+        toast.error("Cihazınız GPS desteklemiyor veya konum alınamadı!");
       }
     },
     stopGpsTracking() {
       if (this.gpsWatcherId !== null) {
-        navigator.geolocation.clearWatch(this.gpsWatcherId);
+        gpsProvider.clearWatch(this.gpsWatcherId);
         this.gpsWatcherId = null;
       }
     },
@@ -341,6 +388,11 @@ export default {
       }
     },
     async startJourney() {
+      if (!this.currentLocation || !this.selectedNextStop) {
+        toast.error("Yolculuk başlatılamadı: Konum bilgisi eksik.");
+        return;
+      }
+
       try {
         this.isDeliveryStarted = true;
         this.isDelivered = false;
@@ -409,9 +461,6 @@ export default {
           lat: this.currentLocation.latitude || this.currentLocation.lat, 
           lng: this.currentLocation.longitude || this.currentLocation.lng 
         };
-
-        // Gerçek cihaz GPS takibini başlat
-        this.startGpsTracking();
 
       } catch (error) {
         console.error("API Hatası:", error);

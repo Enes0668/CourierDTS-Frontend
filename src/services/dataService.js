@@ -198,9 +198,38 @@ export const dataService = {
   },
 
   /**
-   * Belirli bir kuryenin kullanabileceği araçların listesini getirir.
+   * Tüm araçları getirir (Admin kullanımı için).
+   * @returns {Promise<Array>} Araç listesi.
+   */
+  async getVehicles() {
+    try {
+      const response = await api.get('/vehicles');
+      return Array.isArray(response.data) ? response.data : (response.data?.items || []);
+    } catch (error) {
+      console.error("Vehicles fetch error", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Yeni araç ekler (Admin kullanımı için).
+   * @param {Object} payload - Araç verileri (plateNumber, vehicleType, courierId)
+   * @returns {Promise<Object>} Eklenen araç.
+   */
+  async addVehicle(payload) {
+    try {
+      const response = await api.post('/vehicles', payload);
+      return response.data;
+    } catch (error) {
+      console.error("Vehicle add error", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Belirli bir kuryenin atanmış araçlarını getirir.
    * @param {number|string} courierId - Kuryenin ID'si.
-   * @returns {Promise<Array>} Araçların listesi.
+   * @returns {Promise<Array>} Araç listesi.
    */
   async getCourierVehicles(courierId) {
     try {
