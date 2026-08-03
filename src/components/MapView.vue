@@ -168,6 +168,9 @@ export default {
     drawActiveRoute(routeData) {
       this.routeLayerGroup.clearLayers();
       this.previewLayerGroup.clearLayers();
+      
+      // routeLayerGroup temizlendiği için path de silindi, referansını sıfırlıyoruz
+      this.courierPathLayer = null;
 
       if (!routeData) return;
 
@@ -178,7 +181,7 @@ export default {
       L.marker(endCoords, { icon: endIcon }).bindPopup('Hedef: ' + routeData.end.name).addTo(this.routeLayerGroup);
 
       const pathLatLngs = routeData.coordinates.map(coord => [coord.lat, coord.lng]);
-      const polyline = L.polyline(pathLatLngs, LINE_STYLES.COURIER_PATH).addTo(this.routeLayerGroup);
+      const polyline = L.polyline(pathLatLngs, LINE_STYLES.PREVIEW_ROUTE).addTo(this.routeLayerGroup);
 
       this.map.fitBounds(polyline.getBounds(), { padding: MAP_SETTINGS.BOUNDS_PADDING });
     },
