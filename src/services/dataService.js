@@ -76,6 +76,16 @@ export const dataService = {
     }
   },
 
+  async updatePackage(id, payload) {
+    try {
+      const response = await api.put(`/packages/${id}`, payload);
+      return response.data;
+    } catch (error) {
+      console.error("Package update error:", error);
+      throw error;
+    }
+  },
+
   /**
    * Birden fazla paketi toplu olarak bir kuryeye atar.
    * @param {Array<number|string>} packageIds - Atanacak paketlerin ID listesi.
@@ -222,6 +232,26 @@ export const dataService = {
       return response.data;
     } catch (error) {
       console.error("Vehicle add error", error);
+      throw error;
+    }
+  },
+
+  async deleteVehicle(id) {
+    try {
+      const response = await api.delete(`/vehicles/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error("Vehicle delete error", error);
+      throw error;
+    }
+  },
+
+  async updateVehicle(id, payload) {
+    try {
+      const response = await api.put(`/vehicles/${id}`, payload);
+      return response.data;
+    } catch (error) {
+      console.error("Vehicle update error", error);
       throw error;
     }
   },

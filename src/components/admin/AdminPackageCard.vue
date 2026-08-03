@@ -29,6 +29,11 @@
       </div>
     </div>
 
+    <!-- Edit Actions -->
+    <div class="pool-actions" style="display: flex; align-items: center;">
+      <button @click.prevent="$emit('edit-package', pkg)" class="icon-btn edit-btn" style="background:transparent; border:none; font-size:18px; cursor:pointer;" title="Paketi Düzenle">✏️</button>
+    </div>
+
   </div>
 </template>
 
