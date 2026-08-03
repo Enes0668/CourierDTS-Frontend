@@ -54,14 +54,32 @@ class ActionQueueService {
       if (queue.length > 0) {
         console.log(`[SYNC] ${queue.length} adet işlem kuyruktan Backend'e gönderiliyor...`);
         
-        try {
-          await api.post('/packages/syncactions', queue);
-          console.log('[SYNC] Kuyruktaki tüm işlemler başarıyla gönderildi.');
-          localStorage.setItem(this.QUEUE_KEY, JSON.stringify([]));
-        } catch (error) {
-          console.error('[SYNC] Kuyruktaki işlemler gönderilemedi, tekrar denenecek.', error);
-          // Keep them in the queue if failed
+        // Group by courierId_journeyId
+        const groups = {};
+        for (const item of queue) {
+          const key = `${item.courierId}_${item.journeyId}`;
+          if (!groups[key]) {
+            groups[key] = {
+              courierId: item.courierId,
+              journeyId: item.journeyId,
+              actions: []
+            };
+          }
+          groups[key].actions = groups[key].actions.concat(item.actions);
         }
+
+        const remainingQueue = [];
+        for (const key in groups) {
+          try {
+            await api.post('/packages/syncactions', groups[key]);
+            console.log(`[SYNC] ${key} grubu başarıyla gönderildi.`);
+          } catch (error) {
+            console.error(`[SYNC] ${key} grubu gönderilemedi, tekrar denenecek.`, error);
+            remainingQueue.push(groups[key]); // keep failed groups
+          }
+        }
+        
+        localStorage.setItem(this.QUEUE_KEY, JSON.stringify(remainingQueue));
       }
     });
   }

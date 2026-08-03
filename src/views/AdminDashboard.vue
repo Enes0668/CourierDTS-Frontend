@@ -20,8 +20,8 @@
           <h3>Sahadaki Kuryeler</h3>
           <ul class="courier-list">
             <li 
-              v-for="courier in couriers" 
-              :key="courier.id" 
+              v-for="(courier, index) in couriers" 
+              :key="'c-' + (courier.id || index)" 
               :class="{ active: selectedCourierId === courier.id }"
               @click="selectedCourierId = courier.id"
             >
@@ -121,8 +121,8 @@
           
           <div class="pool-list grid-layout">
             <AdminPackageCard
-              v-for="pkg in filteredPendingPool"
-              :key="pkg.id || pkg.Id"
+              v-for="(pkg, index) in filteredPendingPool"
+              :key="'pool-' + (pkg.id || pkg.Id || index)"
               :pkg="pkg"
               type="pool"
               :selected="selectedPoolPackages.includes(pkg.id || pkg.Id)"
@@ -156,8 +156,8 @@
         
         <div v-else class="pool-list grid-layout" style="margin-top: 10px;">
           <AdminPackageCard
-            v-for="pkg in filteredAssignedPendingPool"
-            :key="pkg.id || pkg.Id"
+            v-for="(pkg, index) in filteredAssignedPendingPool"
+            :key="'pending-' + (pkg.id || pkg.Id || index)"
             :pkg="pkg"
             type="pending"
             :courierName="getCourierName(pkg.assignedCourierId || pkg.AssignedCourierId)"
@@ -178,8 +178,8 @@
         
         <div v-else class="pool-list grid-layout" style="margin-top: 10px;">
           <AdminPackageCard
-            v-for="pkg in filteredInTransitPool"
-            :key="pkg.id || pkg.Id"
+            v-for="(pkg, index) in filteredInTransitPool"
+            :key="'transit-' + (pkg.id || pkg.Id || index)"
             :pkg="pkg"
             type="transit"
             :courierName="getCourierName(pkg.assignedCourierId || pkg.AssignedCourierId)"
@@ -255,7 +255,7 @@
             <label>Atanacak Kurye (Opsiyonel)</label>
             <select v-model="newVehicle.courierId">
               <option value="">-- Havuza Bırak (Boşta) --</option>
-              <option v-for="c in couriers" :key="c.id" :value="c.id">{{ c.name || c.fullName || c.username }}</option>
+              <option v-for="(c, index) in couriers" :key="'nv-c-' + (c.id || index)" :value="c.id">{{ c.name || c.fullName || c.username }}</option>
             </select>
           </div>
           
@@ -318,7 +318,7 @@
             <label>Atanan Kurye</label>
             <select v-model="editingPackage.assignedCourierId">
               <option :value="null">-- Havuza Bırak (Boşta) --</option>
-              <option v-for="c in couriers" :key="'edit-p-'+c.id" :value="c.id">{{ c.name || c.fullName || c.username }}</option>
+              <option v-for="(c, index) in couriers" :key="'ep-c-' + (c.id || index)" :value="c.id">{{ c.name || c.fullName || c.username }}</option>
             </select>
           </div>
           <div class="modal-actions" style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px; width: 100%">
@@ -350,7 +350,7 @@
             <label>Atanan Kurye</label>
             <select v-model="editingVehicle.courierId">
               <option :value="null">-- Havuza Bırak (Boşta) --</option>
-              <option v-for="c in couriers" :key="c.id" :value="c.id">{{ c.name || c.fullName || c.username }}</option>
+              <option v-for="(c, index) in couriers" :key="'ev-c-' + (c.id || index)" :value="c.id">{{ c.name || c.fullName || c.username }}</option>
             </select>
           </div>
           <div class="modal-actions" style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px; width: 100%">
@@ -751,18 +751,28 @@ export default {
           }
 
           // Fetch active route for selected courier
-          const journeys = await dataService.getJourneys(this.selectedCourierId);
-          // Assuming backend returns an array and active journey is the latest or has status 'Active'
-          const activeJourney = journeys.find(j => j.status === 'Active') || journeys[journeys.length - 1];
-          if (activeJourney) {
-            const telemetryData = await dataService.getTelemetry(activeJourney.id);
-            this.activeCourierRoute = telemetryData;
-          } else {
-            this.activeCourierRoute = null;
+          if (this.selectedCourierId) {
+            let journeysResponse = await dataService.getJourneys(this.selectedCourierId);
+            let journeys = [];
+            if (Array.isArray(journeysResponse)) {
+              journeys = journeysResponse;
+            } else if (journeysResponse && Array.isArray(journeysResponse.items)) {
+              journeys = journeysResponse.items;
+            } else if (journeysResponse && Array.isArray(journeysResponse.data)) {
+              journeys = journeysResponse.data;
+            }
+            
+            const activeJourney = journeys.find(j => j.status === 'Active' || j.status === 'InProgress') || journeys[journeys.length - 1];
+            if (activeJourney) {
+              const telemetryData = await dataService.getTelemetry(activeJourney.id);
+              this.activeCourierRoute = telemetryData;
+            } else {
+              this.activeCourierRoute = null;
+            }
           }
 
         } catch (error) {
-          console.warn("Canlı izleme verisi çekilemedi (Simülasyon devam ediyor).");
+          console.warn("Canlı izleme verisi çekilemedi (Simülasyon devam ediyor).", error);
         }
         
         if (this.activeTab === 'live') {

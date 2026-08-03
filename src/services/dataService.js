@@ -38,8 +38,27 @@ export const dataService = {
    */
   async getAllPackages() {
     try {
-        const response = await api.get('/packages');
-        return response.data;
+        let allItems = [];
+        let page = 1;
+        const pageSize = 200;
+        let totalCount = 0;
+
+        do {
+            const response = await api.get(`/packages?page=${page}&pageSize=${pageSize}`);
+            const data = response.data;
+            if (data && data.items) {
+                allItems = allItems.concat(data.items);
+                totalCount = data.totalCount || 0;
+            } else if (Array.isArray(data)) {
+                allItems = allItems.concat(data);
+                break; // Not a paged response, just return it
+            } else {
+                break;
+            }
+            page++;
+        } while (allItems.length < totalCount);
+
+        return allItems;
     } catch (error) {
         console.error("API Error (getAllPackages):", error);
         throw error;
@@ -118,9 +137,10 @@ export const dataService = {
   },
 
   /**
-   * Kurye için yeni bir teslimat turu başlatır.
-   * @param {Object} payload - Tura eklenecek hedefler ve paket ID'lerini içeren nesne.
-   * @returns {Promise<Object>} Başlatılan turun verisi (içinde tourId bulunur).
+   * Yeni bir kurye turu başlatır.
+   * Beklenen payload: { courierId, endLocationId, materialIds, plannedPath, plannedDistanceMeters }
+   * @param {Object} payload - Tur başlatma verisi
+   * @returns {Promise<Object>} Başlatılan turun verisi (içinde journeyId bulunur).
    */
   async startJourney(payload) {
     const response = await api.post('/journeys/start', payload);
@@ -150,7 +170,8 @@ export const dataService = {
   async getTourHistoryByBarcode(barcode) {
     try {
       const response = await api.get(`/packages/route?barcode=${barcode}`);
-      return response.data;
+      const data = response.data?.items ? response.data.items : (response.data || []);
+      return Array.isArray(data) ? data : (data.data || []);
     } catch (error) {
       console.error("API Error (getTourHistoryByBarcode):", error);
       throw error;
@@ -165,7 +186,8 @@ export const dataService = {
   async getTelemetry(journeyId) {
     try {
       const response = await api.get(`/telemetry?journeyId=${journeyId}`);
-      return response.data;
+      const data = response.data?.items ? response.data.items : (response.data || []);
+      return Array.isArray(data) ? data : (data.data || []);
     } catch (error) {
       console.error("API Error (getTelemetry):", error);
       throw error;
@@ -287,6 +309,41 @@ export const dataService = {
       return response.data;
     } catch (error) {
       console.error("Set courier active vehicle error", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Aktif bir kurye turunu iptal eder.
+   * @param {number|string} journeyId - İptal edilecek turun ID'si.
+   * @returns {Promise<Object>} İşlem sonucu.
+   */
+  async cancelJourney(journeyId) {
+    try {
+      const response = await api.put(`/journeys/${journeyId}/cancel`);
+      return response.data;
+    } catch (error) {
+      console.error("API Error (cancelJourney):", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Kuryenin aktif/pasif durumunu günceller.
+   * @param {number|string} courierId - Kuryenin ID'si.
+   * @param {boolean} isActive - Aktiflik durumu.
+   * @returns {Promise<Object>} İşlem sonucu.
+   */
+  async setCourierActive(courierId, isActive) {
+    try {
+      const payload = {
+        courierId: parseInt(courierId),
+        isActive: Boolean(isActive)
+      };
+      const response = await api.put('/courier/active', payload);
+      return response.data;
+    } catch (error) {
+      console.error("API Error (setCourierActive):", error);
       throw error;
     }
   }

@@ -7,7 +7,7 @@
         <div class="vehicle-select" v-if="!isDeliveryStarted">
           <select v-model="activeVehicleId" @change="updateVehicle">
             <option value="" disabled>Araç Seçin</option>
-            <option v-for="v in vehicles" :key="v.id" :value="v.id">{{ v.plate }} - {{ v.type }}</option>
+            <option v-for="v in vehicles" :key="v.id" :value="v.id">{{ v.plateNumber }} - {{ v.vehicleType }}</option>
           </select>
         </div>
 
@@ -400,12 +400,37 @@ export default {
         
         const courierId = localStorage.getItem('courier_id') || 1;
         
+        let coordinates = [];
+        let plannedDistanceMeters = 0;
+        let startLng, startLat, endLng, endLat;
+
         try {
-          const resp = await dataService.startJourney(
-            courierId,
-            this.currentLocation.id,
-            this.selectedNextStop.id
-          );
+          startLng = this.currentLocation.longitude || this.currentLocation.lng;
+          startLat = this.currentLocation.latitude || this.currentLocation.lat;
+          endLng = this.selectedNextStop.longitude || this.selectedNextStop.lng;
+          endLat = this.selectedNextStop.latitude || this.selectedNextStop.lat;
+          
+          const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
+          const res = await fetch(osrmUrl);
+          const data = await res.json();
+          
+          if(data.routes && data.routes.length > 0) {
+              coordinates = data.routes[0].geometry.coordinates.map(c => ({ lat: c[1], lng: c[0] }));
+              plannedDistanceMeters = data.routes[0].distance || 0;
+          }
+        } catch(e) {
+          console.warn("OSRM rotası alınamadı.", e);
+        }
+
+        try {
+          const payload = {
+            courierId: parseInt(courierId),
+            endLocationId: this.selectedNextStop.id,
+            materialIds: this.myPackages.map(p => p.id || p.Id).filter(id => id != null),
+            plannedPath: coordinates,
+            plannedDistanceMeters: plannedDistanceMeters
+          };
+          const resp = await dataService.startJourney(payload);
           this.currentJourneyId = resp.journeyId;
         } catch (e) {
           console.warn("API ulaşılamadı, mock JourneyId üretiliyor.");
@@ -413,22 +438,9 @@ export default {
         }
         
         telemetry.setContext(courierId, this.currentJourneyId);
-        telemetry.startDelivery(this.currentLocation.name, this.selectedNextStop.name, 0, []);
+        telemetry.startDelivery(this.currentLocation.name, this.selectedNextStop.name, plannedDistanceMeters, coordinates);
 
         try {
-          const startLng = this.currentLocation.longitude || this.currentLocation.lng;
-          const startLat = this.currentLocation.latitude || this.currentLocation.lat;
-          const endLng = this.selectedNextStop.longitude || this.selectedNextStop.lng;
-          const endLat = this.selectedNextStop.latitude || this.selectedNextStop.lat;
-          
-          let coordinates = [];
-          const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
-          const res = await fetch(osrmUrl);
-          const data = await res.json();
-          
-          if(data.routes && data.routes.length > 0) {
-              coordinates = data.routes[0].geometry.coordinates.map(c => ({ lat: c[1], lng: c[0] }));
-          }
           
           // OSRM verisi geldikten sonra routeData'yı TEK SEFERDE atıyoruz.
           // Bu sayede MapView içindeki "watch" mekanizması tetiklenir.
@@ -570,11 +582,18 @@ export default {
         toast.error("İşlem reddedildi. Üzerinizde bu durağa ait teslim edilmemiş paket olabilir.");
       }
     },
-    handleCancelChoice(isConfirmed) {
+    async handleCancelChoice(isConfirmed) {
       if (isConfirmed) {
-        telemetry.cancelDelivery(`Rota İptal: ${this.actionNotes}`, 0);
-        this.stopGpsTracking();
-        this.resetJourneyState();
+        try {
+          if (this.currentJourneyId) {
+            await dataService.cancelJourney(this.currentJourneyId);
+          }
+          telemetry.cancelDelivery(`Rota İptal: ${this.actionNotes}`, 0);
+          this.stopGpsTracking();
+          this.resetJourneyState();
+        } catch (error) {
+          toast.error("İptal işlemi başarısız oldu. Lütfen tekrar deneyin.");
+        }
       } else {
         this.showConfirmation = false;
       }
