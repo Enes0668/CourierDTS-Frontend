@@ -20,8 +20,8 @@
           <h3>Sahadaki Kuryeler</h3>
           <ul class="courier-list">
             <li 
-              v-for="courier in couriers" 
-              :key="courier.id" 
+              v-for="(courier, index) in couriers" 
+              :key="'c-' + (courier.id || index)" 
               :class="{ active: selectedCourierId === courier.id }"
               @click="selectedCourierId = courier.id"
             >
@@ -121,12 +121,13 @@
           
           <div class="pool-list grid-layout">
             <AdminPackageCard
-              v-for="pkg in filteredPendingPool"
-              :key="pkg.id || pkg.Id"
+              v-for="(pkg, index) in filteredPendingPool"
+              :key="'pool-' + (pkg.id || pkg.Id || index)"
               :pkg="pkg"
               type="pool"
               :selected="selectedPoolPackages.includes(pkg.id || pkg.Id)"
               @toggle="togglePackageSelection"
+              @edit-package="openEditPackageModal"
             />
           </div>
         </div>
@@ -155,11 +156,12 @@
         
         <div v-else class="pool-list grid-layout" style="margin-top: 10px;">
           <AdminPackageCard
-            v-for="pkg in filteredAssignedPendingPool"
-            :key="pkg.id || pkg.Id"
+            v-for="(pkg, index) in filteredAssignedPendingPool"
+            :key="'pending-' + (pkg.id || pkg.Id || index)"
             :pkg="pkg"
             type="pending"
             :courierName="getCourierName(pkg.assignedCourierId || pkg.AssignedCourierId)"
+            @edit-package="openEditPackageModal"
           />
         </div>
       </div>
@@ -176,11 +178,12 @@
         
         <div v-else class="pool-list grid-layout" style="margin-top: 10px;">
           <AdminPackageCard
-            v-for="pkg in filteredInTransitPool"
-            :key="pkg.id || pkg.Id"
+            v-for="(pkg, index) in filteredInTransitPool"
+            :key="'transit-' + (pkg.id || pkg.Id || index)"
             :pkg="pkg"
             type="transit"
             :courierName="getCourierName(pkg.assignedCourierId || pkg.AssignedCourierId)"
+            @edit-package="openEditPackageModal"
           />
         </div>
       </div>
@@ -252,7 +255,7 @@
             <label>Atanacak Kurye (Opsiyonel)</label>
             <select v-model="newVehicle.courierId">
               <option value="">-- Havuza Bırak (Boşta) --</option>
-              <option v-for="c in couriers" :key="c.id" :value="c.id">{{ c.name }}</option>
+              <option v-for="(c, index) in couriers" :key="'nv-c-' + (c.id || index)" :value="c.id">{{ c.name || c.fullName || c.username }}</option>
             </select>
           </div>
           
@@ -277,8 +280,84 @@
                 </span>
               </div>
             </div>
+            <div class="pool-actions">
+              <button @click="openEditVehicleModal(v)" class="icon-btn edit-btn" title="Aracı Düzenle">✏️</button>
+              <button @click="removeVehicle(v.id || v.Id)" class="icon-btn delete-btn" title="Aracı Sil">🗑️</button>
+            </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- EDIT PACKAGE MODAL -->
+    <div v-if="showEditPackageModal" class="modal-overlay" @click.self="showEditPackageModal = false">
+      <div class="modal-content">
+        <h3>✏️ Paket Düzenle</h3>
+        <form @submit.prevent="savePackageEdit" class="new-vehicle-form edit-form">
+          <div class="form-group" style="width: 100%">
+            <label>Barkod</label>
+            <input type="text" v-model="editingPackage.barcode" required />
+          </div>
+          <div class="form-group" style="width: 100%">
+            <label>İçerik (Açıklama)</label>
+            <input type="text" v-model="editingPackage.description" />
+          </div>
+          <div class="form-group" style="width: 100%">
+            <label>Durum</label>
+            <select v-model="editingPackage.status" required>
+              <option value="Pending">Bekliyor (Pending)</option>
+              <option value="PickedUp">Alındı (PickedUp)</option>
+              <option value="InTransit">Yolda (InTransit)</option>
+              <option value="Delivered">Teslim Edildi (Delivered)</option>
+              <option value="Damaged">Hasarlı (Damaged)</option>
+              <option value="Lost">Kayıp (Lost)</option>
+              <option value="Cancelled">İptal Edildi (Cancelled)</option>
+            </select>
+          </div>
+          <div class="form-group" style="width: 100%">
+            <label>Atanan Kurye</label>
+            <select v-model="editingPackage.assignedCourierId">
+              <option :value="null">-- Havuza Bırak (Boşta) --</option>
+              <option v-for="(c, index) in couriers" :key="'ep-c-' + (c.id || index)" :value="c.id">{{ c.name || c.fullName || c.username }}</option>
+            </select>
+          </div>
+          <div class="modal-actions" style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px; width: 100%">
+            <button type="button" class="logout-btn-top" @click="showEditPackageModal = false">İptal</button>
+            <button type="submit" class="primary-btn">Kaydet</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- EDIT VEHICLE MODAL -->
+    <div v-if="showEditVehicleModal" class="modal-overlay" @click.self="showEditVehicleModal = false">
+      <div class="modal-content">
+        <h3>✏️ Araç Düzenle</h3>
+        <form @submit.prevent="saveVehicleEdit" class="new-vehicle-form edit-form">
+          <div class="form-group" style="width: 100%">
+            <label>Plaka Numarası</label>
+            <input type="text" v-model="editingVehicle.plateNumber" required />
+          </div>
+          <div class="form-group" style="width: 100%">
+            <label>Araç Tipi</label>
+            <select v-model="editingVehicle.vehicleType" required>
+              <option value="Motosiklet">Motosiklet</option>
+              <option value="Otomobil">Otomobil</option>
+              <option value="Minivan">Minivan</option>
+            </select>
+          </div>
+          <div class="form-group" style="width: 100%">
+            <label>Atanan Kurye</label>
+            <select v-model="editingVehicle.courierId">
+              <option :value="null">-- Havuza Bırak (Boşta) --</option>
+              <option v-for="(c, index) in couriers" :key="'ev-c-' + (c.id || index)" :value="c.id">{{ c.name || c.fullName || c.username }}</option>
+            </select>
+          </div>
+          <div class="modal-actions" style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px; width: 100%">
+            <button type="button" class="logout-btn-top" @click="showEditVehicleModal = false">İptal</button>
+            <button type="submit" class="primary-btn">Kaydet</button>
+          </div>
+        </form>
       </div>
     </div>
   </div>
@@ -299,6 +378,22 @@ export default {
       locations: [],
       couriers: [],
       allVehicles: [],
+      showEditVehicleModal: false,
+      showEditPackageModal: false,
+      editingVehicle: {
+        id: null,
+        plateNumber: '',
+        vehicleType: '',
+        courierId: null
+      },
+      editingPackage: {
+        id: null,
+        barcode: '',
+        description: '',
+        status: '',
+        assignedCourierId: null,
+        originalCourierId: null
+      },
       newVehicle: {
         plateNumber: '',
         vehicleType: '',
@@ -484,6 +579,98 @@ export default {
         toast.error("Araç eklenirken hata oluştu");
       }
     },
+    async removeVehicle(id) {
+      if (!confirm("Bu aracı silmek istediğinize emin misiniz?")) return;
+      try {
+        await dataService.deleteVehicle(id);
+        toast.success("Araç başarıyla silindi");
+        await this.loadVehicles();
+      } catch (err) {
+        let msg = "Araç silinirken hata oluştu";
+        if (err.response && err.response.data) {
+          if (typeof err.response.data === 'string') msg = err.response.data;
+          else if (err.response.data.message) msg = err.response.data.message;
+          else if (err.response.data.title) msg = err.response.data.title;
+        }
+        toast.error(msg);
+      }
+    },
+    openEditVehicleModal(vehicle) {
+      this.editingVehicle = {
+        id: vehicle.id || vehicle.Id,
+        plateNumber: vehicle.plateNumber || vehicle.PlateNumber,
+        vehicleType: vehicle.vehicleType || vehicle.VehicleType,
+        courierId: vehicle.courierId || vehicle.CourierId || null
+      };
+      this.showEditVehicleModal = true;
+    },
+    async saveVehicleEdit() {
+      try {
+        const payload = { ...this.editingVehicle };
+        if (!payload.courierId || payload.courierId === 'null' || payload.courierId === '') {
+          payload.courierId = null;
+        } else {
+          payload.courierId = parseInt(payload.courierId);
+        }
+        
+        await dataService.updateVehicle(payload.id, payload);
+        toast.success("Araç başarıyla güncellendi");
+        this.showEditVehicleModal = false;
+        await this.loadVehicles();
+      } catch (err) {
+        let msg = "Araç güncellenirken hata oluştu";
+        if (err.response && err.response.data) {
+          if (typeof err.response.data === 'string') msg = err.response.data;
+          else if (err.response.data.message) msg = err.response.data.message;
+          else if (err.response.data.title) msg = err.response.data.title;
+        }
+        toast.error(msg);
+      }
+    },
+    openEditPackageModal(pkg) {
+      this.editingPackage = {
+        id: pkg.id || pkg.Id,
+        barcode: pkg.barcode || pkg.Barcode,
+        description: pkg.description || pkg.Description,
+        status: pkg.status || pkg.Status || 'Pending',
+        assignedCourierId: pkg.assignedCourierId || pkg.AssignedCourierId || null,
+        originalCourierId: pkg.assignedCourierId || pkg.AssignedCourierId || null,
+        priority: pkg.priority || pkg.Priority,
+        pickupLocationId: pkg.pickupLocationId || pkg.PickupLocationId,
+        dropoffLocationId: pkg.dropoffLocationId || pkg.DropoffLocationId
+      };
+      this.showEditPackageModal = true;
+    },
+    async savePackageEdit() {
+      try {
+        const payload = { ...this.editingPackage };
+        if (!payload.assignedCourierId || payload.assignedCourierId === 'null' || payload.assignedCourierId === '') {
+          payload.assignedCourierId = null;
+        } else {
+          payload.assignedCourierId = parseInt(payload.assignedCourierId);
+        }
+        
+        await dataService.updatePackage(payload.id, payload);
+        
+        // If courier changed, try to assign it explicitly via bulk assign endpoint just in case
+        if (payload.assignedCourierId !== payload.originalCourierId) {
+            await dataService.assignPackageBulk([payload.id], payload.assignedCourierId || 0);
+        }
+        
+        toast.success("Paket başarıyla güncellendi");
+        this.showEditPackageModal = false;
+        await this.loadPoolData();
+        await this.fetchData();
+      } catch (err) {
+        let msg = "Paket güncellenirken hata oluştu";
+        if (err.response && err.response.data) {
+          if (typeof err.response.data === 'string') msg = err.response.data;
+          else if (err.response.data.message) msg = err.response.data.message;
+          else if (err.response.data.title) msg = err.response.data.title;
+        }
+        toast.error(msg);
+      }
+    },
     async loadPoolData() {
       try { 
         let res = await dataService.getAllPackages(); 
@@ -564,18 +751,20 @@ export default {
           }
 
           // Fetch active route for selected courier
-          const journeys = await dataService.getJourneys(this.selectedCourierId);
-          // JourneyStatus enum'ında "Active" yok; devam eden sefer "InProgress"tir.
-          const activeJourney = journeys.find(j => j.status === 'InProgress') || journeys[journeys.length - 1];
-          if (activeJourney) {
-            const telemetryData = await dataService.getTelemetry(activeJourney.id);
-            this.activeCourierRoute = telemetryData;
-          } else {
-            this.activeCourierRoute = null;
+          if (this.selectedCourierId) {
+            const journeys = await dataService.getJourneys(this.selectedCourierId);
+            // JourneyStatus enum'ında "Active" yok; devam eden sefer "InProgress"tir.
+            const activeJourney = journeys.find(j => j.status === 'InProgress') || journeys[journeys.length - 1];
+            if (activeJourney) {
+              const telemetryData = await dataService.getTelemetry(activeJourney.id);
+              this.activeCourierRoute = telemetryData;
+            } else {
+              this.activeCourierRoute = null;
+            }
           }
 
         } catch (error) {
-          console.warn("Canlı izleme verisi çekilemedi (Simülasyon devam ediyor).");
+          console.warn("Canlı izleme verisi çekilemedi (Simülasyon devam ediyor).", error);
         }
         
         if (this.activeTab === 'live') {
@@ -875,51 +1064,7 @@ export default {
 }
 
 /* Mobil Uyum (Responsive Design) */
-@media (max-width: 768px) {
-  .admin-container {
-    flex-direction: column;
-    height: auto;
-    min-height: 100vh;
-  }
-  .sidebar {
-    width: 100%;
-    border-right: none;
-    border-bottom: 1px solid #333;
-    max-height: none;
-  }
-  .map-area {
-    height: auto !important;
-    padding: 10px;
-  }
-  .map-header {
-    cursor: pointer;
-    background: #1e1e1e;
-    padding: 12px;
-    border-radius: 8px;
-    margin-bottom: 10px;
-  }
-  .map-header-title {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 5px;
-  }
-  .mobile-toggle-icon {
-    display: block;
-    font-size: 20px;
-  }
-  .collapsed-mobile .map-collapsible-content {
-    display: none;
-  }
-  .map-area:not(.collapsed-mobile) .map-collapsible-content {
-    height: 50vh;
-    display: flex;
-    flex-direction: column;
-  }
-  .map-area:not(.collapsed-mobile) .map-container {
-    flex-grow: 1;
-    min-height: 250px;
-  }
-}
+
 
 .sub-heading {
   font-size: 14px;
@@ -1075,6 +1220,57 @@ export default {
   margin-bottom: 10px;
 }
 
+.pool-actions {
+  display: flex;
+  align-items: center;
+}
+.icon-btn {
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  opacity: 0.8;
+  transition: transform 0.2s, opacity 0.2s;
+  padding: 5px;
+}
+.icon-btn:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+.delete-btn:hover {
+  filter: hue-rotate(-30deg) brightness(1.2);
+}
+.edit-btn:hover {
+  filter: hue-rotate(90deg) brightness(1.2);
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(3px);
+}
+.modal-content {
+  background: #1a1a1a;
+  padding: 25px;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 400px;
+  border: 1px solid #333;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+}
+.modal-content h3 {
+  margin-top: 0;
+  color: #4CAF50;
+  border-bottom: 1px solid #333;
+  padding-bottom: 10px;
+  margin-bottom: 15px;
+}
+
 /* Tab Architecture Styles */
 .admin-dashboard-modern {
   display: flex;
@@ -1226,5 +1422,85 @@ export default {
 }
 .read-only-item { 
   border-left: 4px solid #d35400; 
+}
+
+/* Mobil Uyum (Responsive Design) */
+@media (max-width: 768px) {
+  .admin-dashboard-modern {
+    height: auto;
+    min-height: 100vh;
+  }
+  .top-nav-tabs {
+    flex-direction: column;
+    height: auto;
+    padding: 10px;
+    gap: 10px;
+  }
+  .tabs-container {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .tab-content {
+    overflow-y: auto;
+  }
+  .live-tab, .vehicles-tab, .pool-tab, .new-tab {
+    flex-direction: column;
+    padding: 10px;
+    align-items: stretch;
+  }
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid #333;
+    max-height: none;
+    padding: 10px;
+    box-sizing: border-box;
+  }
+  .map-area {
+    height: auto !important;
+    padding: 10px;
+    flex-grow: unset;
+  }
+  .map-header {
+    cursor: pointer;
+    background: #1e1e1e;
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+  }
+  .map-header-title {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+  }
+  .search-bar {
+    width: 100%;
+    margin-top: 10px;
+  }
+  .search-bar input {
+    flex-grow: 1;
+  }
+  .mobile-toggle-icon {
+    display: block;
+    font-size: 20px;
+    position: absolute;
+    right: 20px;
+    top: 20px;
+  }
+  .map-header {
+    position: relative;
+  }
+  .collapsed-mobile .map-collapsible-content {
+    display: none;
+  }
+  .map-area:not(.collapsed-mobile) .map-collapsible-content {
+    height: 60vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .map-area:not(.collapsed-mobile) .map-container {
+    flex-grow: 1;
+    min-height: 350px;
+  }
 }
 </style>

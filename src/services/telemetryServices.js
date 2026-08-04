@@ -38,8 +38,11 @@ class TelemetryService {
   }
 
   setContext(courierId, journeyId) {
-    this.context.courier_id = courierId;
-    this.context.journey_id = journeyId;
+    // localStorage'dan gelen courierId string olabilir; backend courier_id/journey_id'yi
+    // nullable olmayan int olarak beklediği için string gönderilirse deserialization
+    // hatası alınır ve paket hiç sunucuya ulaşmaz. Burada sayıya normalize ediyoruz.
+    this.context.courier_id = courierId != null ? Number(courierId) : null;
+    this.context.journey_id = journeyId != null ? Number(journeyId) : null;
     console.log('[TELEMETRY] Kimlik tanımlandı:', this.context);
   }
 

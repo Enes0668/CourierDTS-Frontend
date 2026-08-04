@@ -260,16 +260,18 @@ export default {
       window.addEventListener('offline', this.updateOnlineStatus);
       window.addEventListener('online', this.updateOnlineStatus);
       window.addEventListener('telemetry_arrived', this.handleTelemetryArrived);
-      
+      window.addEventListener('storage', this.handleSimulationModeChange);
+
       // Uygulama açılır açılmaz GPS takibini başlat ki
       // Başlangıç konumu null iken GPS'ten (autoDetectInitialLocation) bulunsun.
-      this.startGpsTracking();
+      await this.startGpsTracking();
     } catch(e) { console.warn(e); }
   },
   beforeUnmount() {
     window.removeEventListener('offline', this.updateOnlineStatus);
     window.removeEventListener('online', this.updateOnlineStatus);
     window.removeEventListener('telemetry_arrived', this.handleTelemetryArrived);
+    window.removeEventListener('storage', this.handleSimulationModeChange);
     this.stopGpsTracking();
   },
   methods: {
@@ -343,33 +345,42 @@ export default {
         toast.info(`Başlangıç noktanız GPS ile belirlendi: ${closestLoc.name}`);
       }
     },
-    startGpsTracking() {
-      this.gpsWatcherId = gpsProvider.watchPosition(
+    async startGpsTracking() {
+      this.gpsWatcherId = await gpsProvider.watchPosition(
         (position) => {
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
           this.mockPosition = { lat, lng };
-          
+
           if (!this.currentLocation && !this.isDeliveryStarted) {
             this.autoDetectInitialLocation(lat, lng);
           }
-          
+
           // Pass coordinate to Telemetry Service which buffers and sends it
           telemetry.addCoordinate(lat, lng, false);
         },
         (error) => console.warn("GPS Hatası:", error),
-        { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+        { enableHighAccuracy: true, timeout: 5000 }
       );
-      
+
       if (!this.gpsWatcherId && !gpsProvider.isSimulating) {
-        toast.error("Cihazınız GPS desteklemiyor veya konum alınamadı!");
+        toast.error("Cihazınız GPS desteklemiyor veya konum izni verilmedi!");
       }
     },
-    stopGpsTracking() {
+    async stopGpsTracking() {
       if (this.gpsWatcherId !== null) {
-        gpsProvider.clearWatch(this.gpsWatcherId);
+        await gpsProvider.clearWatch(this.gpsWatcherId);
         this.gpsWatcherId = null;
       }
+    },
+    // Simülasyon Panelinde mod başka bir sekmede açılıp kapatıldığında
+    // (localStorage 'storage' eventi) burada zaten kurulu olan GPS izlemeyi
+    // yeni moda göre yeniden başlatır. Aksi halde watchPosition() sadece
+    // mount anındaki modu okuduğu için değişiklik hiç fark edilmezdi.
+    async handleSimulationModeChange(event) {
+      if (event.key !== 'SIMULATION_MODE') return;
+      await this.stopGpsTracking();
+      await this.startGpsTracking();
     },
     undoPickup(pkg) {
       if (confirm(`"${pkg.barcode}" numaralı paketi geri bırakmak istediğinize emin misiniz?`)) {
@@ -400,14 +411,16 @@ export default {
 
         const courierId = localStorage.getItem('courier_id') || 1;
 
-        const startLng = this.currentLocation.longitude || this.currentLocation.lng;
-        const startLat = this.currentLocation.latitude || this.currentLocation.lat;
-        const endLng = this.selectedNextStop.longitude || this.selectedNextStop.lng;
-        const endLat = this.selectedNextStop.latitude || this.selectedNextStop.lat;
-
         let coordinates = [];
         let plannedDistanceMeters = 0;
+        let startLng, startLat, endLng, endLat;
+
         try {
+          startLng = this.currentLocation.longitude || this.currentLocation.lng;
+          startLat = this.currentLocation.latitude || this.currentLocation.lat;
+          endLng = this.selectedNextStop.longitude || this.selectedNextStop.lng;
+          endLat = this.selectedNextStop.latitude || this.selectedNextStop.lat;
+
           const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
           const res = await fetch(osrmUrl);
           const data = await res.json();
@@ -417,30 +430,15 @@ export default {
               plannedDistanceMeters = data.routes[0].distance || 0;
           }
         } catch(e) {
-          console.error("OSRM Hatası", e);
+          console.warn("OSRM rotası alınamadı.", e);
         }
-
-        // OSRM verisi geldikten sonra routeData'yı TEK SEFERDE atıyoruz.
-        // Bu sayede MapView içindeki "watch" mekanizması tetiklenir.
-        this.routeData = {
-          start: {
-            ...this.currentLocation,
-            lat: startLat,
-            lng: startLng
-          },
-          end: {
-            ...this.selectedNextStop,
-            lat: endLat,
-            lng: endLng
-          },
-          coordinates: coordinates
-        };
 
         try {
           const payload = {
             courierId: parseInt(courierId),
+            startLocationId: this.currentLocation ? this.currentLocation.id : null,
             endLocationId: this.selectedNextStop.id,
-            materialIds: this.myPackages.map(p => p.id),
+            materialIds: this.myPackages.map(p => p.id || p.Id).filter(id => id != null),
             plannedPath: coordinates,
             plannedDistanceMeters: plannedDistanceMeters
           };
@@ -454,6 +452,31 @@ export default {
         telemetry.setContext(courierId, this.currentJourneyId);
         telemetry.startDelivery(this.currentLocation.name, this.selectedNextStop.name, plannedDistanceMeters, coordinates);
 
+        try {
+          // OSRM verisi geldikten sonra routeData'yı TEK SEFERDE atıyoruz.
+          // Bu sayede MapView içindeki "watch" mekanizması tetiklenir.
+          this.routeData = {
+            start: {
+              ...this.currentLocation,
+              lat: startLat,
+              lng: startLng
+            },
+            end: {
+              ...this.selectedNextStop,
+              lat: endLat,
+              lng: endLng
+            },
+            coordinates: coordinates
+          };
+        } catch(e) {
+          console.error("Rota verisi oluşturulamadı", e);
+          // Hata durumunda boş çizgi atayalım ki harita çökmesin
+          this.routeData = {
+            start: { lat: this.currentLocation.latitude || this.currentLocation.lat, lng: this.currentLocation.longitude || this.currentLocation.lng },
+            end: { lat: this.selectedNextStop.latitude || this.selectedNextStop.lat, lng: this.selectedNextStop.longitude || this.selectedNextStop.lng },
+            coordinates: []
+          };
+        }
         // Kuryeyi başlangıç noktasına yerleştir
         this.mockPosition = {
           lat: this.currentLocation.latitude || this.currentLocation.lat,

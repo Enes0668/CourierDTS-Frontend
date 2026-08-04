@@ -93,6 +93,16 @@ export const dataService = {
     }
   },
 
+  async updatePackage(id, payload) {
+    try {
+      const response = await api.put(`/packages/${id}`, payload);
+      return response.data;
+    } catch (error) {
+      console.error("Package update error:", error);
+      throw error;
+    }
+  },
+
   /**
    * Birden fazla paketi toplu olarak bir kuryeye atar.
    * @param {Array<number|string>} packageIds - Atanacak paketlerin ID listesi.
@@ -173,7 +183,8 @@ export const dataService = {
   async getTourHistoryByBarcode(barcode) {
     try {
       const response = await api.get(`/packages/route?barcode=${barcode}`);
-      return response.data;
+      const data = response.data?.items ? response.data.items : (response.data || []);
+      return Array.isArray(data) ? data : (data.data || []);
     } catch (error) {
       console.error("API Error (getTourHistoryByBarcode):", error);
       throw error;
@@ -188,7 +199,8 @@ export const dataService = {
   async getTelemetry(journeyId) {
     try {
       const response = await api.get(`/telemetry?journeyId=${journeyId}`);
-      return response.data;
+      const data = response.data?.items ? response.data.items : (response.data || []);
+      return Array.isArray(data) ? data : (data.data || []);
     } catch (error) {
       console.error("API Error (getTelemetry):", error);
       throw error;
@@ -255,6 +267,26 @@ export const dataService = {
       return response.data;
     } catch (error) {
       console.error("Vehicle add error", error);
+      throw error;
+    }
+  },
+
+  async deleteVehicle(id) {
+    try {
+      const response = await api.delete(`/vehicles/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error("Vehicle delete error", error);
+      throw error;
+    }
+  },
+
+  async updateVehicle(id, payload) {
+    try {
+      const response = await api.put(`/vehicles/${id}`, payload);
+      return response.data;
+    } catch (error) {
+      console.error("Vehicle update error", error);
       throw error;
     }
   },
