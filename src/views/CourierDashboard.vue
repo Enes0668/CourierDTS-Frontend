@@ -215,7 +215,11 @@ export default {
   },
   computed: {
     myPackages() {
-      return this.packages.filter(p => p.status === 'InTransit').sort((a, b) => b.priority - a.priority);
+      // Backend PackageStatus enum'ında kuryenin elindeki paket için hem "PickedUp"
+      // hem "InTransit" geçerli — sadece InTransit'e bakınca alım sonrası backend'den
+      // gelen gerçek değer "PickedUp" olduğunda paket listeden (ve dolayısıyla
+      // "Teslim Et" sayacından) kayboluyordu.
+      return this.packages.filter(p => p.status === 'PickedUp' || p.status === 'InTransit').sort((a, b) => b.priority - a.priority);
     },
     pendingPackages() {
       return this.packages.filter(p => p.status === 'Pending').sort((a, b) => b.priority - a.priority);
@@ -552,7 +556,7 @@ export default {
         }, courierId, this.currentJourneyId);
 
         if (success) {
-          pkg.status = 'InTransit';
+          pkg.status = 'PickedUp';
         } else {
           failedBarcodes.push(pkg.barcode || pkg.id);
         }

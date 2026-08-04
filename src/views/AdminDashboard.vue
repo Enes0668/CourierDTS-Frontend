@@ -490,7 +490,10 @@ export default {
       return this.packages.filter(p => {
         const courierId = p.assignedCourierId !== undefined ? p.assignedCourierId : p.AssignedCourierId;
         const status = p.status || p.Status;
-        return courierId === this.selectedCourierId && status === 'InTransit';
+        // PackageStatus enum'ında kuryenin elindeki paket için hem "PickedUp" hem
+        // "InTransit" geçerli (bkz. inTransitPool) — sadece InTransit'e bakınca
+        // henüz InTransit'e geçmemiş yeni alınmış paketler listeden düşüyordu.
+        return courierId === this.selectedCourierId && (status === 'PickedUp' || status === 'InTransit');
       });
     },
     courierPackagesPending() {

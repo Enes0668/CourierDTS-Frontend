@@ -111,7 +111,11 @@ export const dataService = {
    */
   async assignPackageBulk(packageIds, courierId) {
     try {
-      const response = await api.put(`/packages/bulk-assign`, { packageIds, courierId });
+      // Backend courierId için null bekler (= havuza döndür); UI'da "0" pool'u
+      // temsil ettiği için burada normalize ediyoruz, aksi halde backend
+      // courierId=0 için kurye arayıp bulamaz ve 500 döner.
+      const normalizedCourierId = courierId ? parseInt(courierId) : null;
+      const response = await api.put(`/packages/bulk-assign`, { packageIds, courierId: normalizedCourierId });
       return response.data;
     } catch (error) {
       console.error("API Error (assignPackageBulk):", error);
