@@ -105,8 +105,16 @@
           <button @click="loadPoolData" class="refresh-btn">🔄 Yenile</button>
         </div>
         
-        <div class="input-group">
-          <input type="text" v-model="poolFilterText" placeholder="Havuzda ara (Barkod, İçerik...)" />
+        <div class="input-group" style="display: flex; gap: 10px; margin-bottom: 15px;">
+          <input type="text" v-model="poolFilterText" placeholder="Havuzda ara (Barkod, İçerik...)" style="flex: 1;" />
+          <select v-model="poolPickupFilter" style="flex: 1;" class="filter-select">
+            <option value="">-- Tüm Alınacak Noktalar --</option>
+            <option v-for="loc in locations" :key="'pf-'+loc.id" :value="loc.id">{{ loc.name }}</option>
+          </select>
+          <select v-model="poolDropoffFilter" style="flex: 1;" class="filter-select">
+            <option value="">-- Tüm Bırakılacak Noktalar --</option>
+            <option v-for="loc in locations" :key="'df-'+loc.id" :value="loc.id">{{ loc.name }}</option>
+          </select>
         </div>
 
         <div v-if="filteredPendingPool.length === 0" class="no-data">
@@ -126,8 +134,11 @@
               :pkg="pkg"
               type="pool"
               :selected="selectedPoolPackages.includes(pkg.id || pkg.Id)"
+              :pickupName="getLocationName(pkg.pickupLocationId || pkg.PickupLocationId || pkg.pickupLocId || pkg.PickupLocId)"
+              :dropoffName="getLocationName(pkg.dropoffLocationId || pkg.DropoffLocationId || pkg.dropoffLocId || pkg.DropoffLocId)"
               @toggle="togglePackageSelection"
               @edit-package="openEditPackageModal"
+              @delete-package="removePackage"
             />
           </div>
         </div>
@@ -150,19 +161,27 @@
           <h3>📋 Atanmış (Bekleyen) Paketler</h3>
         </div>
         
-        <div v-if="filteredAssignedPendingPool.length === 0" class="no-data">
+        <div v-if="groupedAssignedPool.length === 0" class="no-data">
           Filtreye uygun atanmış ve bekleyen paket yok.
         </div>
         
-        <div v-else class="pool-list grid-layout" style="margin-top: 10px;">
-          <AdminPackageCard
-            v-for="(pkg, index) in filteredAssignedPendingPool"
-            :key="'pending-' + (pkg.id || pkg.Id || index)"
-            :pkg="pkg"
-            type="pending"
-            :courierName="getCourierName(pkg.assignedCourierId || pkg.AssignedCourierId)"
-            @edit-package="openEditPackageModal"
-          />
+        <div v-else>
+          <div v-for="group in groupedAssignedPool" :key="'assigned-group-' + group.courierId" class="courier-package-group">
+            <h4 class="group-header">🛵 {{ group.courierName }} <span class="badge" style="background-color: #f39c12; color: #fff;">{{ group.packages.length }} Paket</span></h4>
+            <div class="pool-list grid-layout" style="margin-top: 10px;">
+              <AdminPackageCard
+                v-for="(pkg, index) in group.packages"
+                :key="'pending-' + (pkg.id || pkg.Id || index)"
+                :pkg="pkg"
+                type="pending"
+                :courierName="group.courierName"
+                :pickupName="getLocationName(pkg.pickupLocationId || pkg.PickupLocationId || pkg.pickupLocId || pkg.PickupLocId)"
+                :dropoffName="getLocationName(pkg.dropoffLocationId || pkg.DropoffLocationId || pkg.dropoffLocId || pkg.DropoffLocId)"
+                @edit-package="openEditPackageModal"
+                @delete-package="removePackage"
+              />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -172,19 +191,27 @@
           <h3>🚚 Kuryedeki (Taşıma Aşamasında) Paketler</h3>
         </div>
         
-        <div v-if="filteredInTransitPool.length === 0" class="no-data">
+        <div v-if="groupedInTransitPool.length === 0" class="no-data">
           Filtreye uygun taşınan paket yok.
         </div>
         
-        <div v-else class="pool-list grid-layout" style="margin-top: 10px;">
-          <AdminPackageCard
-            v-for="(pkg, index) in filteredInTransitPool"
-            :key="'transit-' + (pkg.id || pkg.Id || index)"
-            :pkg="pkg"
-            type="transit"
-            :courierName="getCourierName(pkg.assignedCourierId || pkg.AssignedCourierId)"
-            @edit-package="openEditPackageModal"
-          />
+        <div v-else>
+          <div v-for="group in groupedInTransitPool" :key="'transit-group-' + group.courierId" class="courier-package-group">
+            <h4 class="group-header">🚚 {{ group.courierName }} <span class="badge" style="background-color: #27ae60; color: #fff;">{{ group.packages.length }} Paket</span></h4>
+            <div class="pool-list grid-layout" style="margin-top: 10px;">
+              <AdminPackageCard
+                v-for="(pkg, index) in group.packages"
+                :key="'transit-' + (pkg.id || pkg.Id || index)"
+                :pkg="pkg"
+                type="transit"
+                :courierName="group.courierName"
+                :pickupName="getLocationName(pkg.pickupLocationId || pkg.PickupLocationId || pkg.pickupLocId || pkg.PickupLocId)"
+                :dropoffName="getLocationName(pkg.dropoffLocationId || pkg.DropoffLocationId || pkg.dropoffLocId || pkg.DropoffLocId)"
+                @edit-package="openEditPackageModal"
+                @delete-package="removePackage"
+              />
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -271,10 +298,10 @@
             <div class="pool-info">
               <div class="pool-header">
                 <strong>{{ v.plateNumber || v.PlateNumber }}</strong>
-                <span class="badge" style="background-color: #607d8b; color: white;">{{ v.vehicleType || v.VehicleType }}</span>
+                <span class="badge" style="background-color: #607d8b; color: white; padding: 3px 8px; border-radius: 5px; font-size: 0.85em;">{{ v.vehicleType || v.VehicleType }}</span>
               </div>
               <div class="pool-meta mt-2">
-                <span class="chip" :class="(v.courierId || v.CourierId) ? 'chip-success' : 'chip-warning'">
+                <span class="chip" :class="(v.courierId || v.CourierId) ? 'chip-success' : 'chip-warning'" style="padding: 4px 10px; border-radius: 15px; font-size: 0.85em; display: inline-block;">
                   <i class="icon">👤</i> 
                   {{ (v.courierId || v.CourierId) ? getCourierName(v.courierId || v.CourierId) : 'Atanmamış' }}
                 </span>
@@ -312,6 +339,18 @@
               <option value="Damaged">Hasarlı (Damaged)</option>
               <option value="Lost">Kayıp (Lost)</option>
               <option value="Cancelled">İptal Edildi (Cancelled)</option>
+            </select>
+          </div>
+          <div class="form-group" style="width: 100%">
+            <label>Alınacak Nokta</label>
+            <select v-model="editingPackage.pickupLocationId" required>
+              <option v-for="loc in locations" :key="'e-p-' + loc.id" :value="loc.id">{{ loc.name }}</option>
+            </select>
+          </div>
+          <div class="form-group" style="width: 100%">
+            <label>Bırakılacak Nokta</label>
+            <select v-model="editingPackage.dropoffLocationId" required>
+              <option v-for="loc in locations" :key="'e-d-' + loc.id" :value="loc.id">{{ loc.name }}</option>
             </select>
           </div>
           <div class="form-group" style="width: 100%">
@@ -404,6 +443,8 @@ export default {
       selectedAssignCourierId: '0', // 0 means General
       selectedPoolPackages: [],
       poolFilterText: '',
+      poolPickupFilter: '',
+      poolDropoffFilter: '',
       barcodeSearch: '',
       newPkg: {
         barcode: '',
@@ -432,12 +473,21 @@ export default {
     filteredPendingPool() {
       if (!Array.isArray(this.pendingPool)) return [];
       const lowerFilter = (this.poolFilterText || '').toLowerCase();
-      if (!lowerFilter) return this.pendingPool;
+      const pickupFilter = this.poolPickupFilter;
+      const dropoffFilter = this.poolDropoffFilter;
+      
       return this.pendingPool.filter(p => {
         const barcode = p.barcode || p.Barcode || '';
         const desc = p.description || p.Description || '';
-        return String(barcode).toLowerCase().includes(lowerFilter) || 
-               String(desc).toLowerCase().includes(lowerFilter);
+        const matchesText = !lowerFilter || String(barcode).toLowerCase().includes(lowerFilter) || String(desc).toLowerCase().includes(lowerFilter);
+        
+        const pickupLoc = p.pickupLocationId || p.PickupLocationId;
+        const matchesPickup = !pickupFilter || String(pickupLoc) === String(pickupFilter);
+        
+        const dropoffLoc = p.dropoffLocationId || p.DropoffLocationId;
+        const matchesDropoff = !dropoffFilter || String(dropoffLoc) === String(dropoffFilter);
+        
+        return matchesText && matchesPickup && matchesDropoff;
       });
     },
     assignedPendingPool() {
@@ -479,6 +529,36 @@ export default {
         return String(barcode).toLowerCase().includes(lowerFilter) || 
                String(desc).toLowerCase().includes(lowerFilter);
       });
+    },
+    groupedAssignedPool() {
+      const groups = {};
+      this.filteredAssignedPendingPool.forEach(pkg => {
+        const courierId = pkg.assignedCourierId || pkg.AssignedCourierId;
+        if (!groups[courierId]) {
+          groups[courierId] = {
+            courierId,
+            courierName: this.getCourierName(courierId),
+            packages: []
+          };
+        }
+        groups[courierId].packages.push(pkg);
+      });
+      return Object.values(groups).sort((a, b) => a.courierName.localeCompare(b.courierName));
+    },
+    groupedInTransitPool() {
+      const groups = {};
+      this.filteredInTransitPool.forEach(pkg => {
+        const courierId = pkg.assignedCourierId || pkg.AssignedCourierId;
+        if (!groups[courierId]) {
+          groups[courierId] = {
+            courierId,
+            courierName: this.getCourierName(courierId),
+            packages: []
+          };
+        }
+        groups[courierId].packages.push(pkg);
+      });
+      return Object.values(groups).sort((a, b) => a.courierName.localeCompare(b.courierName));
     },
     isAllFilteredSelected() {
       if (this.filteredPendingPool.length === 0) return false;
@@ -595,6 +675,22 @@ export default {
         toast.error(msg);
       }
     },
+    async removePackage(id) {
+      if (!confirm("Bu paketi tamamen silmek istediğinize emin misiniz?")) return;
+      try {
+        await dataService.deletePackage(id);
+        toast.success("Paket başarıyla silindi");
+        await this.loadPoolData();
+      } catch (err) {
+        let msg = "Paket silinirken hata oluştu";
+        if (err.response && err.response.data) {
+          if (typeof err.response.data === 'string') msg = err.response.data;
+          else if (err.response.data.message) msg = err.response.data.message;
+          else if (err.response.data.title) msg = err.response.data.title;
+        }
+        toast.error(msg);
+      }
+    },
     openEditVehicleModal(vehicle) {
       this.editingVehicle = {
         id: vehicle.id || vehicle.Id,
@@ -636,8 +732,8 @@ export default {
         assignedCourierId: pkg.assignedCourierId || pkg.AssignedCourierId || null,
         originalCourierId: pkg.assignedCourierId || pkg.AssignedCourierId || null,
         priority: pkg.priority || pkg.Priority,
-        pickupLocationId: pkg.pickupLocationId || pkg.PickupLocationId,
-        dropoffLocationId: pkg.dropoffLocationId || pkg.DropoffLocationId
+        pickupLocationId: pkg.pickupLocationId || pkg.PickupLocationId || pkg.pickupLocId || pkg.PickupLocId,
+        dropoffLocationId: pkg.dropoffLocationId || pkg.DropoffLocationId || pkg.dropoffLocId || pkg.DropoffLocId
       };
       this.showEditPackageModal = true;
     },
@@ -649,6 +745,14 @@ export default {
         } else {
           payload.assignedCourierId = parseInt(payload.assignedCourierId);
         }
+        
+        // Ensure locations are integers
+        payload.pickupLocationId = parseInt(payload.pickupLocationId);
+        payload.dropoffLocationId = parseInt(payload.dropoffLocationId);
+        
+        // Ensure PascalCase equivalents are present to satisfy strict backend binders
+        payload.PickupLocationId = payload.pickupLocationId;
+        payload.DropoffLocationId = payload.dropoffLocationId;
         
         await dataService.updatePackage(payload.id, payload);
         
@@ -1510,5 +1614,128 @@ export default {
     flex-grow: 1;
     min-height: 350px;
   }
+}
+/* Kurye Grupları için Stiller */
+.courier-package-group {
+  margin-bottom: 25px;
+  background: rgba(40, 40, 40, 0.6);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  padding: 15px;
+}
+
+.group-header {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.filter-select {
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: #2a2a2a;
+  font-size: 14px;
+  color: #fff;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  cursor: pointer;
+}
+.filter-select:focus {
+  border-color: #4CAF50;
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
+}
+
+.vehicles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+  margin-top: 20px;
+}
+.vehicle-card {
+  background: rgba(30, 30, 30, 0.7);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.vehicle-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.vehicle-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.vehicle-plate {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+}
+.vehicle-status {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 20px;
+  font-weight: 600;
+}
+.status-active { background: #1f3a20; color: #a5d6a7; }
+.status-inactive { background: #3d2613; color: #f39c12; }
+
+.vehicle-body {
+  flex: 1;
+  font-size: 14px;
+  color: #bbb;
+  margin-bottom: 15px;
+}
+.vehicle-info-row {
+  display: flex;
+  margin-bottom: 8px;
+}
+.vehicle-info-label {
+  font-weight: 600;
+  width: 70px;
+  color: #888;
+}
+
+.vehicle-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.btn-icon {
+  background: #333;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #fff;
+}
+.btn-icon:hover {
+  background: #444;
+  transform: scale(1.05);
+}
+.btn-icon.delete:hover {
+  background: #5a2a2a;
+  border-color: #ffcccc;
 }
 </style>

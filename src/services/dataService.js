@@ -100,7 +100,22 @@ export const dataService = {
       const response = await api.put(`/packages/${id}`, payload);
       return response.data;
     } catch (error) {
-      console.error("Package update error:", error);
+      console.error("API Error (updatePackage):", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Var olan bir paketi sistemden siler.
+   * @param {number|string} id - Silinecek paketin ID'si.
+   * @returns {Promise<Object>} API yanıtı.
+   */
+  async deletePackage(id) {
+    try {
+      const response = await api.delete(`/packages/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error("API Error (deletePackage):", error);
       throw error;
     }
   },
