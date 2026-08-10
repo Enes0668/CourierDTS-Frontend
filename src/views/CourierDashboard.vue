@@ -82,12 +82,21 @@
             </option>
           </select>
         </div>
-        <button 
-          @click="startJourney" 
+        <button
+          @click="startJourney"
           class="scan-btn"
           :disabled="!selectedNextStop || !activeVehicleId"
         >
           {{ !activeVehicleId ? 'Araç Seçmelisiniz' : '🏍️ Yola Çık' }}
+        </button>
+
+        <button
+          v-if="currentJourneyId && myPackages.length === 0"
+          @click="finishWholeShift"
+          class="cancel-btn"
+          style="margin-top: 10px;"
+        >
+          🏁 Seferi Bitir (Günü Kapat)
         </button>
       </div>
 
@@ -257,7 +266,8 @@ export default {
     
     try {
       const courierId = localStorage.getItem('courier_id') || 1;
-      this.packages = await dataService.getMyPackages(courierId);
+      const rawPackages = await dataService.getMyPackages(courierId);
+      this.packages = (rawPackages || []).map(this.normalizePackage);
     } catch(e) { console.warn("Packages failed", e); }
     
     try {
@@ -279,6 +289,24 @@ export default {
     this.stopGpsTracking();
   },
   methods: {
+    /**
+     * Backend (C#) paket alanlarını bazen camelCase bazen PascalCase döndürebiliyor
+     * (bkz. AdminDashboard.vue'daki aynı sorun). Bu fallback olmadan status/pickupLocId/
+     * dropoffLocId undefined kalıyor ve paket hiçbir listede (Bekleyen/Üzerimdeki)
+     * görünmüyordu. Ham paketi tutarlı camelCase alanlarla normalize ediyoruz.
+     */
+    normalizePackage(p) {
+      return {
+        ...p,
+        id: p.id ?? p.Id,
+        barcode: p.barcode ?? p.Barcode,
+        priority: p.priority ?? p.Priority ?? 1,
+        description: p.description ?? p.Description,
+        status: p.status ?? p.Status,
+        pickupLocId: p.pickupLocId ?? p.PickupLocId ?? p.pickupLocationId ?? p.PickupLocationId,
+        dropoffLocId: p.dropoffLocId ?? p.DropoffLocId ?? p.dropoffLocationId ?? p.DropoffLocationId
+      };
+    },
     updateOnlineStatus() {
       this.isOffline = !navigator.onLine;
     },
@@ -360,6 +388,23 @@ export default {
             this.autoDetectInitialLocation(lat, lng);
           }
 
+          // "Hedefe Ulaştım" butonu her bir little journey (durak) değiştiğinde backend'in
+          // /telemetry/batch cevabındaki isArrived bayrağını bekliyordu; ancak bu bayrak,
+          // seferin hedefinin /replan ile güncellenip güncellenmediğine bağlı ve bu güncelleme
+          // her zaman backend'e yansımayabiliyor. Bunun yerine mesafeyi doğrudan burada,
+          // istemci tarafında da hesaplıyoruz (autoDetectInitialLocation'da kullanılan aynı
+          // yöntemle) — böylece hedef her değiştiğinde buton backend'i beklemeden çıkar.
+          if (this.isDeliveryStarted && !this.isDelivered && this.selectedNextStop) {
+            const targetLat = this.selectedNextStop.latitude || this.selectedNextStop.lat;
+            const targetLng = this.selectedNextStop.longitude || this.selectedNextStop.lng;
+            if (targetLat && targetLng) {
+              const distanceToTarget = this.calculateDistance(lat, lng, targetLat, targetLng);
+              if (distanceToTarget < 100) { // 100m eşiği (bkz. POST /locations/{id}/checkin)
+                this.isNearTarget = true;
+              }
+            }
+          }
+
           // Pass coordinate to Telemetry Service which buffers and sends it
           telemetry.addCoordinate(lat, lng, false);
         },
@@ -437,20 +482,36 @@ export default {
           console.warn("OSRM rotası alınamadı.", e);
         }
 
-        try {
-          const payload = {
-            courierId: parseInt(courierId),
-            startLocationId: this.currentLocation ? this.currentLocation.id : null,
-            endLocationId: this.selectedNextStop.id,
-            materialIds: this.myPackages.map(p => p.id || p.Id).filter(id => id != null),
-            plannedPath: coordinates,
-            plannedDistanceMeters: plannedDistanceMeters
-          };
-          const resp = await dataService.startJourney(payload);
-          this.currentJourneyId = resp.journeyId;
-        } catch (e) {
-          console.warn("API ulaşılamadı, mock JourneyId üretiliyor.");
-          this.currentJourneyId = Math.floor(Math.random() * 1000);
+        if (this.currentJourneyId) {
+          // Aynı seferin (Sefer/Tour) içinde yeni bir durağa geçiyoruz — /journeys/start'ı
+          // TEKRAR çağırmıyoruz (bkz. "Aktif Sefer Kontrolü" notu), sadece hedefi/rotayı
+          // günceliyoruz. Bu sayede sefer, gün boyunca tek bir kayıt olarak kalır ve
+          // üzerimizdeki teslim edilmemiş paketler sefer tamamlanmadan sorun yaratmaz.
+          try {
+            await dataService.replanJourney(this.currentJourneyId, {
+              endLocationId: this.selectedNextStop.id,
+              plannedPath: coordinates,
+              plannedDistanceMeters: plannedDistanceMeters
+            });
+          } catch (e) {
+            console.warn("Rota güncellenemedi (replan), yerel olarak devam ediliyor.", e);
+          }
+        } else {
+          try {
+            const payload = {
+              courierId: parseInt(courierId),
+              startLocationId: this.currentLocation ? this.currentLocation.id : null,
+              endLocationId: this.selectedNextStop.id,
+              materialIds: this.myPackages.map(p => p.id || p.Id).filter(id => id != null),
+              plannedPath: coordinates,
+              plannedDistanceMeters: plannedDistanceMeters
+            };
+            const resp = await dataService.startJourney(payload);
+            this.currentJourneyId = resp.journeyId;
+          } catch (e) {
+            console.warn("API ulaşılamadı, mock JourneyId üretiliyor.");
+            this.currentJourneyId = Math.floor(Math.random() * 1000);
+          }
         }
 
         telemetry.setContext(courierId, this.currentJourneyId);
@@ -599,20 +660,38 @@ export default {
       }
       this.closeModals();
     },
-    async endJourneyAtStop() {
+    endJourneyAtStop() {
+      // Bu buton SADECE bu duraktaki işlemleri bitirip yeni bir durak seçmek içindir —
+      // günün TAMAMEN bitirilmesi (backend'in "teslim edilmemiş materyal varsa reddeder"
+      // kuralına tabi PUT /journeys/{id}/complete çağrısı) burada YAPILMAZ. Aksi halde
+      // üzerinde henüz teslim edilmemiş (başka bir durağa gidecek) paket taşıyan kurye
+      // her durakta reddedilirdi. Sefer, gün sonunda "Seferi Bitir" ile kapatılır.
+      telemetry.completeDelivery(0);
+      // GPS takibi TÜM sefer (gün) boyunca sürmeli; sadece bu duraktaki işi bitirdik,
+      // vardiya bitmedi — bu yüzden GPS izlemesi burada durdurulmuyor.
+
+      // Update current location to where we just arrived
+      this.currentLocation = this.selectedNextStop;
+      this.resetJourneyState();
+    },
+    async finishWholeShift() {
+      if (!this.currentJourneyId) {
+        toast.error("Aktif bir sefer bulunamadı.");
+        return;
+      }
+      if (this.myPackages.length > 0) {
+        toast.error("Üzerinizde hâlâ teslim edilmemiş paket var. Seferi bitiremezsiniz.");
+        return;
+      }
+      if (!confirm("Bugünkü seferi tamamen sonlandırmak istediğinize emin misiniz?")) return;
+
       try {
-        if (this.currentJourneyId) {
-          await dataService.completeJourney(this.currentJourneyId);
-        }
-        
-        telemetry.completeDelivery(0);
+        await dataService.completeJourney(this.currentJourneyId);
+        toast.success("Sefer başarıyla tamamlandı. İyi çalışmalar!");
+        this.currentJourneyId = null;
         this.stopGpsTracking();
-        
-        // Update current location to where we just arrived
-        this.currentLocation = this.selectedNextStop;
-        this.resetJourneyState();
       } catch (error) {
-        toast.error("İşlem reddedildi. Üzerinizde bu durağa ait teslim edilmemiş paket olabilir.");
+        toast.error("İşlem reddedildi. Üzerinizde bu sefere ait teslim edilmemiş paket olabilir.");
       }
     },
     async handleCancelChoice(isConfirmed) {
@@ -622,7 +701,10 @@ export default {
             await dataService.cancelJourney(this.currentJourneyId);
           }
           telemetry.cancelDelivery(`Rota İptal: ${this.actionNotes}`, 0);
-          this.stopGpsTracking();
+          // İptal edilen sefer artık backend'de kapalı bir kayıt; bir sonraki "Yola Çık"
+          // bu ID'yi replan etmeye çalışmasın diye temizliyoruz, yeni bir sefer başlatılsın.
+          this.currentJourneyId = null;
+          // GPS takibi vardiya boyunca sürmeli, sadece bu rota iptal edildi.
           this.resetJourneyState();
         } catch (error) {
           toast.error("Sefer iptal edilirken bir hata oluştu.");

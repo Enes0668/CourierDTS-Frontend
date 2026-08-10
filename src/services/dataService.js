@@ -179,6 +179,21 @@ export const dataService = {
   },
 
   /**
+   * Devam eden (henüz tamamlanmamış) bir seferin rotasını/hedefini günceller. Kurye aynı
+   * sefer ("Sefer (Tour) Mantığı") içinde birden fazla durağı ziyaret ederken, her yeni
+   * durak seçiminde tekrar /journeys/start çağırmak yerine bu uç kullanılır — aksi halde
+   * "Aktif Sefer Kontrolü" kuralı (tek seferde tek aktif tur) ikinci start çağrısını reddeder
+   * ve kuryenin üzerinde teslim edilmemiş materyal varken sefer tamamlanmaya zorlanmış olur.
+   * @param {number|string} journeyId - Güncellenecek aktif seferin ID'si.
+   * @param {Object} payload - { endLocationId, plannedPath, plannedDistanceMeters }
+   * @returns {Promise<Object>} API yanıtı.
+   */
+  async replanJourney(journeyId, payload) {
+    const response = await api.put(`/journeys/${journeyId}/replan`, payload);
+    return response.data;
+  },
+
+  /**
    * Belirli bir kuryenin geçmişteki tüm turlarını listeler.
    * Backend bu uçtan sayfalanmış (PagedResult) yanıt döner, burada items dizisine açılır.
    * @param {number|string} courierId - Turları getirilecek kurye ID'si.
@@ -251,6 +266,7 @@ export const dataService = {
       return data.map(c => ({
         id: c.id || c.userId || c.Id || c.UserId,
         name: c.name || c.username || c.Name || c.Username || c.fullName || c.FullName || 'Bilinmeyen',
+        phone: c.phone || c.Phone || '',
         lat: c.lastLat || c.LastLat,
         lng: c.lastLng || c.LastLng,
         status: (c.isActive === true || c.IsActive === true) ? "Aktif" : "Pasif"
@@ -361,6 +377,175 @@ export const dataService = {
       return response.data;
     } catch (error) {
       console.error("Set courier active error", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Günlük özet istatistikleri getirir (toplam/yoldaki/teslim edilen materyal sayıları,
+   * kurye doluluk oranları). Backend'in tam alan adları teyit edilmediği için AdminDashboard
+   * bu veriyi bulamadığı alanlar için packages/couriers listesinden kendi hesapladığı
+   * yedek (fallback) değerlerle tamamlar.
+   * @returns {Promise<Object>} Dashboard özet nesnesi (backend şemasına göre).
+   */
+  async getDashboard() {
+    try {
+      const response = await api.get('/dashboard');
+      return response.data?.data || response.data || {};
+    } catch (error) {
+      console.error("API Error (getDashboard):", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Aktif kuryelerin (veya tek bir kuryenin) o an elinde taşınan paketlerini getirir.
+   * @param {number|string} [courierId] - Verilirse sadece o kuryeye filtrelenir.
+   * @returns {Promise<Array>} Kuryelerin elindeki paketlerin listesi.
+   */
+  async getCourierOnHand(courierId) {
+    try {
+      const params = courierId ? { courierId } : {};
+      const response = await api.get('/couriers/onhand', { params });
+      const data = response.data?.items ? response.data.items : (response.data || []);
+      return Array.isArray(data) ? data : [];
+    } catch (error) {
+      console.error("API Error (getCourierOnHand):", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Yeni bir kurye (kullanıcı) oluşturur.
+   * @param {Object} payload - { username, password, name, phone }
+   * @returns {Promise<Object>} Oluşturulan kurye.
+   */
+  async addCourier(payload) {
+    try {
+      const response = await api.post('/couriers', payload);
+      return response.data;
+    } catch (error) {
+      console.error("API Error (addCourier):", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Var olan bir kuryenin bilgilerini günceller.
+   * @param {number|string} id - Güncellenecek kuryenin ID'si.
+   * @param {Object} payload - Güncellenmiş kurye verileri.
+   * @returns {Promise<Object>} API yanıtı.
+   */
+  async updateCourier(id, payload) {
+    try {
+      const response = await api.put(`/couriers/${id}`, payload);
+      return response.data;
+    } catch (error) {
+      console.error("API Error (updateCourier):", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Bir kuryeyi sistemden siler.
+   * @param {number|string} id - Silinecek kuryenin ID'si.
+   * @returns {Promise<Object>} API yanıtı.
+   */
+  async deleteCourier(id) {
+    try {
+      const response = await api.delete(`/couriers/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error("API Error (deleteCourier):", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Kurye Devri (Nakil): Bir kuryenin üzerindeki sonuçlanmamış (henüz teslim edilmemiş)
+   * tüm materyallerini tek istekte başka bir kuryeye devreder. Sahada kaza/arıza gibi acil
+   * durumlarda "Bags" yapısına ihtiyaç duymadan kullanılmak üzere tasarlanmıştır.
+   * @param {number|string} fromCourierId - Üzerindeki paketler devredilecek kurye.
+   * @param {number|string} toCourierId - Paketlerin devredileceği yeni kurye.
+   * @returns {Promise<Object>} API yanıtı.
+   */
+  async transferCourierPackages(fromCourierId, toCourierId) {
+    try {
+      const normalizedToId = parseInt(toCourierId);
+      // Backend'in beklediği alan adı teyit edilmediğinden, olası isimlendirmelerin
+      // hepsi aynı payload'da gönderiliyor (diğer uçlarda da kullanılan savunmacı desen).
+      const payload = {
+        toCourierId: normalizedToId,
+        ToCourierId: normalizedToId,
+        newCourierId: normalizedToId
+      };
+      const response = await api.put(`/couriers/${fromCourierId}/transfer`, payload);
+      return response.data;
+    } catch (error) {
+      console.error("API Error (transferCourierPackages):", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Yeni bir lokasyon (merkez) oluşturur.
+   * @param {Object} payload - { name, latitude, longitude }
+   * @returns {Promise<Object>} Oluşturulan lokasyon.
+   */
+  async addLocation(payload) {
+    try {
+      const response = await api.post('/locations', payload);
+      return response.data;
+    } catch (error) {
+      console.error("API Error (addLocation):", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Var olan bir lokasyonu günceller.
+   * @param {number|string} id - Güncellenecek lokasyonun ID'si.
+   * @param {Object} payload - Güncellenmiş lokasyon verileri.
+   * @returns {Promise<Object>} API yanıtı.
+   */
+  async updateLocation(id, payload) {
+    try {
+      const response = await api.put(`/locations/${id}`, payload);
+      return response.data;
+    } catch (error) {
+      console.error("API Error (updateLocation):", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Bir lokasyonu sistemden siler.
+   * @param {number|string} id - Silinecek lokasyonun ID'si.
+   * @returns {Promise<Object>} API yanıtı.
+   */
+  async deleteLocation(id) {
+    try {
+      const response = await api.delete(`/locations/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error("API Error (deleteLocation):", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Paketlerin gözetim zinciri (chain-of-custody) geçmişini getirir: her paketin
+   * alınma/teslim/devir gibi hareketlerini zaman sırasıyla listeler (Raporlama ekranı).
+   * @param {Object} [params] - Opsiyonel filtreler (örn. { packageId, barcode }).
+   * @returns {Promise<Array>} Geçmiş kayıtlarının listesi.
+   */
+  async getPackageHistories(params = {}) {
+    try {
+      const response = await api.get('/packagehistories', { params });
+      const data = response.data?.items ? response.data.items : (response.data || []);
+      return Array.isArray(data) ? data : [];
+    } catch (error) {
+      console.error("API Error (getPackageHistories):", error);
       throw error;
     }
   }

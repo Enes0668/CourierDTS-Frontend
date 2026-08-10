@@ -4,12 +4,63 @@
     <div class="top-nav-tabs">
       <h2>👑 Yönetici Paneli</h2>
       <div class="tabs-container">
+        <button :class="{ active: activeTab === 'dashboard' }" @click="setTab('dashboard')">📊 Özet</button>
         <button :class="{ active: activeTab === 'live' }" @click="setTab('live')">📍 Canlı Takip</button>
         <button :class="{ active: activeTab === 'pool' }" @click="setTab('pool')">📦 Paket Havuzu</button>
-        <button :class="{ active: activeTab === 'new' }" @click="setTab('new')">➕ Yeni Görev</button>
+        <button :class="{ active: activeTab === 'new' }" @click="setTab('new')">📝 İş Emri Oluştur</button>
         <button :class="{ active: activeTab === 'vehicles' }" @click="setTab('vehicles')">🛵 Araç Yönetimi</button>
+        <button :class="{ active: activeTab === 'couriers' }" @click="setTab('couriers')">👥 Kuryeler</button>
+        <button :class="{ active: activeTab === 'locations' }" @click="setTab('locations')">📍 Lokasyonlar</button>
+        <button :class="{ active: activeTab === 'reports' }" @click="setTab('reports')">📜 Raporlama</button>
       </div>
       <button @click="logout" class="logout-btn-top">Güvenli Çıkış</button>
+    </div>
+
+    <!-- TAB: ÖZET (DASHBOARD) -->
+    <div class="tab-content dashboard-tab" v-if="activeTab === 'dashboard'">
+      <div class="dashboard-grid">
+        <div class="stat-card">
+          <div class="stat-icon">📦</div>
+          <div class="stat-value">{{ statTotalPackages }}</div>
+          <div class="stat-label">Toplam Materyal</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">🚚</div>
+          <div class="stat-value">{{ statInTransit }}</div>
+          <div class="stat-label">Yolda</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">✅</div>
+          <div class="stat-value">{{ statDelivered }}</div>
+          <div class="stat-label">Teslim Edildi</div>
+        </div>
+        <div class="stat-card stat-card-warning">
+          <div class="stat-icon">⚠️</div>
+          <div class="stat-value">{{ statDamagedOrLost }}</div>
+          <div class="stat-label">Hasarlı / Kayıp</div>
+        </div>
+      </div>
+
+      <div class="section-block package-form full-width" style="margin-top: 20px;">
+        <div class="panel-header-flex">
+          <h3>🛵 Kurye Doluluk Oranları</h3>
+          <button @click="loadDashboard" class="refresh-btn">🔄 Yenile</button>
+        </div>
+        <div v-if="courierOccupancy.length === 0" class="no-data">Sahada kurye bulunmuyor.</div>
+        <ul v-else class="occupancy-list">
+          <li v-for="row in courierOccupancy" :key="'occ-' + row.courierId" class="occupancy-row">
+            <span class="occupancy-name">🛵 {{ row.name }}</span>
+            <div class="occupancy-bar-track">
+              <div class="occupancy-bar-fill" :style="{ width: row.rate + '%' }"></div>
+            </div>
+            <span class="occupancy-count">{{ row.count }} paket</span>
+          </li>
+        </ul>
+        <p class="hint-text">
+          Not: Backend'in <code>/dashboard</code> ucu bu alanları döndürmediyse (veya farklı bir formatta döndürdüyse)
+          değerler mevcut paket/kurye listesinden anlık olarak hesaplanır.
+        </p>
+      </div>
     </div>
 
     <!-- TAB: CANLI İZLEME -->
@@ -66,6 +117,18 @@
                 </div>
               </li>
             </ul>
+          </div>
+
+          <!-- Kurye Devri (Nakil): Acil durumda kuryenin üzerindeki tüm paketleri tek tuşla başka kuryeye devret -->
+          <div v-if="courierPackagesInTransit.length > 0 || courierPackagesPending.length > 0" class="transfer-box">
+            <h4 class="sub-heading">🔁 Kurye Devri (Acil Durum)</h4>
+            <select v-model="transferToCourierId" class="filter-select" style="width: 100%; margin-bottom: 8px;">
+              <option value="">-- Devredilecek kurye seçin --</option>
+              <option v-for="c in couriers.filter(c => c.id !== selectedCourierId)" :key="'tr-' + c.id" :value="c.id">🛵 {{ c.name }}</option>
+            </select>
+            <button @click="doTransferCourierPackages" class="assign-btn" style="background-color: #e67e22;" :disabled="!transferToCourierId">
+              Tüm Paketleri Devret
+            </button>
           </div>
         </div>
       </div>
@@ -216,11 +279,14 @@
       </div>
     </div>
 
-    <!-- TAB: YENİ PAKET EKLE -->
+    <!-- TAB: İŞ EMRİ OLUŞTUR -->
     <div class="tab-content new-tab" v-if="activeTab === 'new'">
       <div class="section-block package-form centered-panel">
-        <h3>📦 Sisteme Yeni Paket Ekle</h3>
-        
+        <h3>📝 Yeni İş Emri Oluştur</h3>
+        <p class="hint-text" style="margin-top: -5px; margin-bottom: 15px;">
+          "X noktasından alınacak, Y noktasına teslim edilecek" kurallı bir görev tanımlayın.
+        </p>
+
         <div class="input-group">
           <label>Barkod (Opsiyonel - Boşsa sistem üretir)</label>
           <input type="text" v-model="newPkg.barcode" placeholder="Örn: HAST-1234">
@@ -252,8 +318,20 @@
           </select>
         </div>
 
+        <div class="input-group">
+          <label>Doğrudan Ata (Opsiyonel)</label>
+          <select v-model="newPkg.assignedCourierId">
+            <option value="">-- Havuza Bırak (Sonra Atanacak) --</option>
+            <option v-for="c in couriers" :key="'newpkg-c-' + c.id" :value="c.id">🛵 {{ c.name }}</option>
+          </select>
+        </div>
+
+        <p v-if="newPkgSummary" class="hint-text" style="background:#111; padding:10px; border-radius:6px; margin-top: 10px;">
+          📋 {{ newPkgSummary }}
+        </p>
+
         <button @click="createPackageToPool" class="assign-btn" :disabled="!isFormValid">
-          Havuza Ekle
+          İş Emrini Oluştur
         </button>
       </div>
     </div>
@@ -313,6 +391,184 @@
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- TAB: KURYELER (KULLANICI TANIMLAMA) -->
+    <div class="tab-content couriers-tab" v-if="activeTab === 'couriers'">
+      <div class="section-block add-vehicle-section">
+        <h3>👤 Yeni Kurye Ekle</h3>
+        <form @submit.prevent="submitNewCourier" class="new-vehicle-form">
+          <div class="form-group">
+            <label>Kullanıcı Adı</label>
+            <input type="text" v-model="newCourier.username" placeholder="Örn: kurye01" required />
+          </div>
+          <div class="form-group">
+            <label>Şifre</label>
+            <input type="password" v-model="newCourier.password" placeholder="******" required />
+          </div>
+          <div class="form-group">
+            <label>Ad Soyad</label>
+            <input type="text" v-model="newCourier.name" placeholder="Örn: Ahmet Yılmaz" required />
+          </div>
+          <div class="form-group">
+            <label>Telefon (Opsiyonel)</label>
+            <input type="text" v-model="newCourier.phone" placeholder="05xx xxx xx xx" />
+          </div>
+          <button type="submit" class="primary-btn" style="align-self: flex-end;">Kurye Ekle</button>
+        </form>
+      </div>
+
+      <div class="section-block vehicles-list-section" style="margin-top: 20px;">
+        <h3>📋 Mevcut Kuryeler ({{ couriers.length }})</h3>
+        <div v-if="couriers.length === 0" class="no-data">Sistemde kayıtlı kurye yok.</div>
+        <div class="grid-layout">
+          <div v-for="c in couriers" :key="'crlist-' + c.id" class="pool-item premium-card read-only-item">
+            <div class="pool-info">
+              <div class="pool-header">
+                <strong>{{ c.name }}</strong>
+                <span class="badge" :style="{ backgroundColor: c.status === 'Aktif' ? '#27ae60' : '#607d8b', color: '#fff' }">{{ c.status }}</span>
+              </div>
+              <div class="pool-meta mt-2">
+                <span class="chip chip-outline">🎒 {{ courierOnHandCounts[c.id] || 0 }} paket üzerinde</span>
+              </div>
+            </div>
+            <div class="pool-actions">
+              <button @click="openEditCourierModal(c)" class="icon-btn edit-btn" title="Kuryeyi Düzenle">✏️</button>
+              <button @click="removeCourier(c.id)" class="icon-btn delete-btn" title="Kuryeyi Sil">🗑️</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: LOKASYONLAR -->
+    <div class="tab-content locations-tab" v-if="activeTab === 'locations'">
+      <div class="section-block add-vehicle-section">
+        <h3>📍 Yeni Lokasyon Ekle</h3>
+        <form @submit.prevent="submitNewLocation" class="new-vehicle-form">
+          <div class="form-group">
+            <label>Ad (Hastane / Lab / Merkez)</label>
+            <input type="text" v-model="newLocation.name" placeholder="Örn: AYBÜ Hastanesi" required />
+          </div>
+          <div class="form-group">
+            <label>Enlem (Latitude)</label>
+            <input type="number" step="any" v-model="newLocation.latitude" placeholder="39.9208" required />
+          </div>
+          <div class="form-group">
+            <label>Boylam (Longitude)</label>
+            <input type="number" step="any" v-model="newLocation.longitude" placeholder="32.8541" required />
+          </div>
+          <button type="submit" class="primary-btn" style="align-self: flex-end;">Lokasyon Ekle</button>
+        </form>
+      </div>
+
+      <div class="section-block vehicles-list-section" style="margin-top: 20px;">
+        <div class="panel-header-flex">
+          <h3>📋 Mevcut Lokasyonlar ({{ locations.length }})</h3>
+          <button @click="loadLocationsTab" class="refresh-btn">🔄 Yenile</button>
+        </div>
+        <div v-if="locations.length === 0" class="no-data">Sistemde kayıtlı lokasyon yok.</div>
+        <div class="grid-layout">
+          <div v-for="loc in locations" :key="'loclist-' + loc.id" class="pool-item premium-card read-only-item">
+            <div class="pool-info">
+              <div class="pool-header">
+                <strong>{{ loc.name }}</strong>
+              </div>
+              <div class="pool-meta mt-2">
+                <span class="chip chip-outline">🌐 {{ loc.latitude || loc.lat }}, {{ loc.longitude || loc.lng }}</span>
+              </div>
+            </div>
+            <div class="pool-actions">
+              <button @click="openEditLocationModal(loc)" class="icon-btn edit-btn" title="Lokasyonu Düzenle">✏️</button>
+              <button @click="removeLocation(loc.id)" class="icon-btn delete-btn" title="Lokasyonu Sil">🗑️</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: RAPORLAMA -->
+    <div class="tab-content reports-tab" v-if="activeTab === 'reports'">
+      <div class="section-block package-form centered-panel full-width">
+        <div class="panel-header-flex">
+          <h3>📜 Materyal Hareket Geçmişi (Chain-of-Custody)</h3>
+          <button @click="loadReports" class="refresh-btn">🔄 Yenile</button>
+        </div>
+        <div class="input-group" style="display: flex; gap: 10px; margin-bottom: 15px;">
+          <input type="text" v-model="historyFilterBarcode" placeholder="Barkod ile filtrele..." style="flex: 1;" @keyup.enter="loadReports" />
+          <button @click="loadReports" class="assign-btn" style="width: auto; padding: 10px 20px; margin-top: 0;">Filtrele</button>
+        </div>
+
+        <div v-if="historyLoading" class="no-data">Yükleniyor...</div>
+        <div v-else-if="packageHistories.length === 0" class="no-data">Kayıt bulunamadı.</div>
+        <ul v-else class="detailed-pkg-list">
+          <li v-for="(h, index) in packageHistories" :key="'hist-' + (h.id || h.Id || index)">
+            <div class="pkg-main">
+              <strong>{{ h.actionType || h.ActionType || h.action || 'İşlem' }}</strong>
+              — Paket #{{ h.packageId || h.PackageId }}
+            </div>
+            <div class="pkg-sub">
+              <small>
+                🕒 {{ formatHistoryDate(h.actionTime || h.ActionTime) }}
+                <span v-if="h.notes || h.Notes"> · 📝 {{ h.notes || h.Notes }}</span>
+              </small>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- EDIT COURIER MODAL -->
+    <div v-if="showEditCourierModal" class="modal-overlay" @click.self="showEditCourierModal = false">
+      <div class="modal-content">
+        <h3>✏️ Kurye Düzenle</h3>
+        <form @submit.prevent="saveCourierEdit" class="new-vehicle-form edit-form">
+          <div class="form-group" style="width: 100%">
+            <label>Ad Soyad</label>
+            <input type="text" v-model="editingCourier.name" required />
+          </div>
+          <div class="form-group" style="width: 100%">
+            <label>Telefon</label>
+            <input type="text" v-model="editingCourier.phone" />
+          </div>
+          <div class="form-group" style="width: 100%">
+            <label>Durum</label>
+            <select v-model="editingCourier.isActive">
+              <option :value="true">Aktif</option>
+              <option :value="false">Pasif</option>
+            </select>
+          </div>
+          <div class="modal-actions" style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px; width: 100%">
+            <button type="button" class="logout-btn-top" @click="showEditCourierModal = false">İptal</button>
+            <button type="submit" class="primary-btn">Kaydet</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- EDIT LOCATION MODAL -->
+    <div v-if="showEditLocationModal" class="modal-overlay" @click.self="showEditLocationModal = false">
+      <div class="modal-content">
+        <h3>✏️ Lokasyon Düzenle</h3>
+        <form @submit.prevent="saveLocationEdit" class="new-vehicle-form edit-form">
+          <div class="form-group" style="width: 100%">
+            <label>Ad</label>
+            <input type="text" v-model="editingLocation.name" required />
+          </div>
+          <div class="form-group" style="width: 100%">
+            <label>Enlem (Latitude)</label>
+            <input type="number" step="any" v-model="editingLocation.latitude" required />
+          </div>
+          <div class="form-group" style="width: 100%">
+            <label>Boylam (Longitude)</label>
+            <input type="number" step="any" v-model="editingLocation.longitude" required />
+          </div>
+          <div class="modal-actions" style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px; width: 100%">
+            <button type="button" class="logout-btn-top" @click="showEditLocationModal = false">İptal</button>
+            <button type="submit" class="primary-btn">Kaydet</button>
+          </div>
+        </form>
       </div>
     </div>
 
@@ -413,7 +669,7 @@ export default {
   components: { MapView, AdminPackageCard },
   data() {
     return {
-      activeTab: 'live',
+      activeTab: 'dashboard',
       locations: [],
       couriers: [],
       allVehicles: [],
@@ -451,15 +707,41 @@ export default {
         description: '',
         priority: 1,
         pickupLocationId: '',
-        dropoffLocationId: ''
+        dropoffLocationId: '',
+        assignedCourierId: ''
       },
       isMapVisibleOnMobile: false,
 
       // Telemetry Data
       lastUpdate: 'Henüz güncellenmedi',
       pollingTimer: null,
-      mockAdminPosition: null, 
-      activeCourierRoute: null
+      mockAdminPosition: null,
+      activeCourierRoute: null,
+
+      // Dashboard (Özet) verisi — /dashboard'dan gelen ham veri, şema teyit edilemediği için
+      // computed alanlar bunu okuyamazsa packages/couriers listesinden hesaplanmış değere düşer.
+      dashboardStats: null,
+
+      // Kurye Devri (Nakil)
+      transferToCourierId: '',
+
+      // Kuryeler (Kullanıcı Tanımlama)
+      showEditCourierModal: false,
+      newCourier: { username: '', password: '', name: '', phone: '' },
+      editingCourier: { id: null, name: '', phone: '', isActive: true },
+
+      // Lokasyonlar
+      showEditLocationModal: false,
+      newLocation: { name: '', latitude: '', longitude: '' },
+      editingLocation: { id: null, name: '', latitude: '', longitude: '' },
+
+      // Raporlama
+      packageHistories: [],
+      historyFilterBarcode: '',
+      historyLoading: false,
+
+      // Kuryelerin o an üzerinde taşıdığı paket sayısı (GET /couriers/onhand)
+      courierOnHandCounts: {}
     }
   },
   computed: {
@@ -585,15 +867,86 @@ export default {
       });
     },
     isFormValid() {
-      return this.newPkg.description && 
-             this.newPkg.pickupLocationId && 
-             this.newPkg.dropoffLocationId && 
+      return this.newPkg.description &&
+             this.newPkg.pickupLocationId &&
+             this.newPkg.dropoffLocationId &&
              this.newPkg.priority > 0;
+    },
+    newPkgSummary() {
+      if (!this.newPkg.pickupLocationId || !this.newPkg.dropoffLocationId) return '';
+      const pickup = this.getLocationName(this.newPkg.pickupLocationId);
+      const dropoff = this.getLocationName(this.newPkg.dropoffLocationId);
+      const assignPart = this.newPkg.assignedCourierId
+        ? ` ve doğrudan ${this.getCourierName(this.newPkg.assignedCourierId)} kuryesine atanacak.`
+        : ' ve havuza düşecek (sonra atanabilir).';
+      return `${pickup} noktasından alınacak, ${dropoff} noktasına teslim edilecek${assignPart}`;
+    },
+
+    // --- Dashboard (Özet) istatistikleri ---
+    // Backend /dashboard'un tam alan adları teyit edilemediğinden, önce ham cevaptaki
+    // olası alan adları denenir; bulunamazsa packages listesinden anlık hesaplanır.
+    statTotalPackages() {
+      const d = this.dashboardStats;
+      const fromApi = d && (d.totalPackages ?? d.TotalPackages ?? d.total);
+      if (typeof fromApi === 'number') return fromApi;
+      return Array.isArray(this.packages) ? this.packages.length : 0;
+    },
+    statInTransit() {
+      const d = this.dashboardStats;
+      const fromApi = d && (d.inTransit ?? d.InTransit ?? d.onTheWay);
+      if (typeof fromApi === 'number') return fromApi;
+      if (!Array.isArray(this.packages)) return 0;
+      return this.packages.filter(p => {
+        const status = p.status || p.Status;
+        return status === 'PickedUp' || status === 'InTransit';
+      }).length;
+    },
+    statDelivered() {
+      const d = this.dashboardStats;
+      const fromApi = d && (d.delivered ?? d.Delivered);
+      if (typeof fromApi === 'number') return fromApi;
+      if (!Array.isArray(this.packages)) return 0;
+      return this.packages.filter(p => (p.status || p.Status) === 'Delivered').length;
+    },
+    statDamagedOrLost() {
+      const d = this.dashboardStats;
+      const fromApi = d && (d.damagedOrLost ?? d.DamagedOrLost ?? ((d.damaged ?? 0) + (d.lost ?? 0)));
+      if (typeof fromApi === 'number' && fromApi > 0) return fromApi;
+      if (!Array.isArray(this.packages)) return 0;
+      return this.packages.filter(p => {
+        const status = p.status || p.Status;
+        return status === 'Damaged' || status === 'Lost';
+      }).length;
+    },
+    courierOccupancy() {
+      const d = this.dashboardStats;
+      const fromApi = d && (d.courierOccupancy || d.CourierOccupancy);
+      if (Array.isArray(fromApi) && fromApi.length > 0) {
+        return fromApi.map(row => ({
+          courierId: row.courierId ?? row.CourierId,
+          name: row.name ?? row.Name ?? row.courierName ?? 'Bilinmeyen',
+          count: row.count ?? row.Count ?? row.activeCount ?? 0,
+          rate: row.rate ?? row.Rate ?? row.occupancyRate ?? 0
+        }));
+      }
+      // Yedek: her kuryenin o an üzerinde taşıdığı (PickedUp/InTransit) paket sayısını,
+      // en yoğun kuryeye göre orantılayarak bir doluluk çubuğu üretir.
+      if (!Array.isArray(this.couriers) || this.couriers.length === 0) return [];
+      const counts = this.couriers.map(c => {
+        const count = Array.isArray(this.packages) ? this.packages.filter(p => {
+          const courierId = p.assignedCourierId !== undefined ? p.assignedCourierId : p.AssignedCourierId;
+          const status = p.status || p.Status;
+          return courierId === c.id && (status === 'PickedUp' || status === 'InTransit');
+        }).length : 0;
+        return { courierId: c.id, name: c.name, count };
+      });
+      const maxCount = Math.max(1, ...counts.map(c => c.count));
+      return counts.map(c => ({ ...c, rate: Math.round((c.count / maxCount) * 100) }));
     }
   },
   async mounted() {
     this.lastUpdate = new Date().toLocaleTimeString();
-    await this.setTab('live');
+    await this.setTab('dashboard');
   },
   beforeUnmount() {
     if (this.pollingTimer) {
@@ -630,6 +983,9 @@ export default {
         if (this.locations.length === 0) {
           try { this.locations = await dataService.getLocations(); } catch (e) { console.warn(e); }
         }
+        if (this.couriers.length === 0) {
+          try { this.couriers = await dataService.getCouriers(); } catch (e) { console.warn(e); }
+        }
       }
 
       if (tabName === 'vehicles') {
@@ -638,6 +994,227 @@ export default {
         }
         await this.loadVehicles();
       }
+
+      if (tabName === 'dashboard') {
+        if (this.couriers.length === 0) {
+          try { this.couriers = await dataService.getCouriers(); } catch (e) { console.warn(e); }
+        }
+        if (this.packages.length === 0) {
+          try {
+            let res = await dataService.getAllPackages();
+            this.packages = Array.isArray(res) ? res : (res?.items || res?.data || []);
+          } catch (e) { console.warn(e); }
+        }
+        await this.loadDashboard();
+      }
+
+      if (tabName === 'couriers') {
+        try { this.couriers = await dataService.getCouriers(); } catch (e) { console.warn(e); toast.error("Kuryeler yüklenemedi"); }
+        await this.loadCourierOnHandCounts();
+      }
+
+      if (tabName === 'locations') {
+        await this.loadLocationsTab();
+      }
+
+      if (tabName === 'reports') {
+        await this.loadReports();
+      }
+    },
+    async loadCourierOnHandCounts() {
+      try {
+        const onHand = await dataService.getCourierOnHand();
+        const counts = {};
+        onHand.forEach(pkg => {
+          const courierId = pkg.courierId ?? pkg.CourierId ?? pkg.assignedCourierId ?? pkg.AssignedCourierId;
+          if (courierId === undefined || courierId === null) return;
+          counts[courierId] = (counts[courierId] || 0) + 1;
+        });
+        this.courierOnHandCounts = counts;
+      } catch (e) {
+        console.warn("Kuryelerin üzerindeki paketler (onhand) çekilemedi.", e);
+        this.courierOnHandCounts = {};
+      }
+    },
+    async loadDashboard() {
+      try {
+        this.dashboardStats = await dataService.getDashboard();
+      } catch (e) {
+        console.warn("Dashboard özet verisi çekilemedi, yerel hesaplamaya geçiliyor.", e);
+        this.dashboardStats = null;
+      }
+    },
+    async doTransferCourierPackages() {
+      if (!this.transferToCourierId) return;
+      const fromCourier = this.getCourierName(this.selectedCourierId);
+      const toCourier = this.getCourierName(this.transferToCourierId);
+      if (!confirm(`"${fromCourier}" kuryesindeki TÜM sonuçlanmamış paketler "${toCourier}" kuryesine devredilecek. Onaylıyor musunuz?`)) return;
+
+      try {
+        await dataService.transferCourierPackages(this.selectedCourierId, this.transferToCourierId);
+        toast.success(`Paketler ${toCourier} kuryesine devredildi.`);
+        this.transferToCourierId = '';
+        await this.fetchData();
+      } catch (err) {
+        let msg = "Kurye devri sırasında bir hata oluştu";
+        if (err.response && err.response.data) {
+          if (typeof err.response.data === 'string') msg = err.response.data;
+          else if (err.response.data.message) msg = err.response.data.message;
+          else if (err.response.data.title) msg = err.response.data.title;
+        }
+        toast.error(msg);
+      }
+    },
+    async submitNewCourier() {
+      try {
+        const payload = { ...this.newCourier };
+        await dataService.addCourier(payload);
+        toast.success("Kurye başarıyla eklendi");
+        this.newCourier = { username: '', password: '', name: '', phone: '' };
+        this.couriers = await dataService.getCouriers();
+      } catch (err) {
+        let msg = "Kurye eklenirken hata oluştu";
+        if (err.response && err.response.data) {
+          if (typeof err.response.data === 'string') msg = err.response.data;
+          else if (err.response.data.message) msg = err.response.data.message;
+          else if (err.response.data.title) msg = err.response.data.title;
+        }
+        toast.error(msg);
+      }
+    },
+    async removeCourier(id) {
+      if (!confirm("Bu kuryeyi silmek istediğinize emin misiniz?")) return;
+      try {
+        await dataService.deleteCourier(id);
+        toast.success("Kurye başarıyla silindi");
+        this.couriers = await dataService.getCouriers();
+      } catch (err) {
+        let msg = "Kurye silinirken hata oluştu (ilişkili kaydı olabilir)";
+        if (err.response && err.response.data) {
+          if (typeof err.response.data === 'string') msg = err.response.data;
+          else if (err.response.data.message) msg = err.response.data.message;
+          else if (err.response.data.title) msg = err.response.data.title;
+        }
+        toast.error(msg);
+      }
+    },
+    openEditCourierModal(courier) {
+      this.editingCourier = {
+        id: courier.id,
+        name: courier.name,
+        phone: courier.phone || '',
+        isActive: courier.status === 'Aktif'
+      };
+      this.showEditCourierModal = true;
+    },
+    async saveCourierEdit() {
+      try {
+        await dataService.updateCourier(this.editingCourier.id, { ...this.editingCourier });
+        toast.success("Kurye başarıyla güncellendi");
+        this.showEditCourierModal = false;
+        this.couriers = await dataService.getCouriers();
+      } catch (err) {
+        let msg = "Kurye güncellenirken hata oluştu";
+        if (err.response && err.response.data) {
+          if (typeof err.response.data === 'string') msg = err.response.data;
+          else if (err.response.data.message) msg = err.response.data.message;
+          else if (err.response.data.title) msg = err.response.data.title;
+        }
+        toast.error(msg);
+      }
+    },
+    async loadLocationsTab() {
+      try {
+        this.locations = await dataService.getLocations(true);
+      } catch (e) {
+        console.warn(e);
+        toast.error("Lokasyonlar yüklenemedi");
+      }
+    },
+    async submitNewLocation() {
+      try {
+        const payload = {
+          name: this.newLocation.name,
+          latitude: parseFloat(this.newLocation.latitude),
+          longitude: parseFloat(this.newLocation.longitude)
+        };
+        await dataService.addLocation(payload);
+        toast.success("Lokasyon başarıyla eklendi");
+        this.newLocation = { name: '', latitude: '', longitude: '' };
+        await this.loadLocationsTab();
+      } catch (err) {
+        let msg = "Lokasyon eklenirken hata oluştu";
+        if (err.response && err.response.data) {
+          if (typeof err.response.data === 'string') msg = err.response.data;
+          else if (err.response.data.message) msg = err.response.data.message;
+          else if (err.response.data.title) msg = err.response.data.title;
+        }
+        toast.error(msg);
+      }
+    },
+    async removeLocation(id) {
+      if (!confirm("Bu lokasyonu silmek istediğinize emin misiniz?")) return;
+      try {
+        await dataService.deleteLocation(id);
+        toast.success("Lokasyon başarıyla silindi");
+        await this.loadLocationsTab();
+      } catch (err) {
+        let msg = "Lokasyon silinirken hata oluştu (ilişkili kaydı olabilir)";
+        if (err.response && err.response.data) {
+          if (typeof err.response.data === 'string') msg = err.response.data;
+          else if (err.response.data.message) msg = err.response.data.message;
+          else if (err.response.data.title) msg = err.response.data.title;
+        }
+        toast.error(msg);
+      }
+    },
+    openEditLocationModal(loc) {
+      this.editingLocation = {
+        id: loc.id,
+        name: loc.name,
+        latitude: loc.latitude ?? loc.lat,
+        longitude: loc.longitude ?? loc.lng
+      };
+      this.showEditLocationModal = true;
+    },
+    async saveLocationEdit() {
+      try {
+        const payload = {
+          name: this.editingLocation.name,
+          latitude: parseFloat(this.editingLocation.latitude),
+          longitude: parseFloat(this.editingLocation.longitude)
+        };
+        await dataService.updateLocation(this.editingLocation.id, payload);
+        toast.success("Lokasyon başarıyla güncellendi");
+        this.showEditLocationModal = false;
+        await this.loadLocationsTab();
+      } catch (err) {
+        let msg = "Lokasyon güncellenirken hata oluştu";
+        if (err.response && err.response.data) {
+          if (typeof err.response.data === 'string') msg = err.response.data;
+          else if (err.response.data.message) msg = err.response.data.message;
+          else if (err.response.data.title) msg = err.response.data.title;
+        }
+        toast.error(msg);
+      }
+    },
+    async loadReports() {
+      this.historyLoading = true;
+      try {
+        const params = this.historyFilterBarcode.trim() ? { barcode: this.historyFilterBarcode.trim() } : {};
+        this.packageHistories = await dataService.getPackageHistories(params);
+      } catch (e) {
+        console.warn(e);
+        toast.error("Raporlama verisi yüklenemedi");
+        this.packageHistories = [];
+      } finally {
+        this.historyLoading = false;
+      }
+    },
+    formatHistoryDate(dateStr) {
+      if (!dateStr) return '-';
+      const d = new Date(dateStr);
+      return isNaN(d.getTime()) ? dateStr : d.toLocaleString('tr-TR');
     },
     async loadVehicles() {
       try {
@@ -924,27 +1501,29 @@ export default {
       }
     },
     async createPackageToPool() {
+      const assignedCourierId = this.newPkg.assignedCourierId ? parseInt(this.newPkg.assignedCourierId) : null;
       const payload = {
         barcode: this.newPkg.barcode.trim() || `SYS-${Date.now().toString().slice(-4)}`,
         description: this.newPkg.description,
         priority: this.newPkg.priority,
         pickupLocationId: this.newPkg.pickupLocationId,
         dropoffLocationId: this.newPkg.dropoffLocationId,
-        assignedCourierId: null // Boş gönderiyoruz ki Havuza düşsün
+        assignedCourierId // Boşsa Havuza düşer, doluysa doğrudan o kuryeye atanır
       };
-      
+
       await dataService.createPackage(payload);
       await this.fetchData();
-      
+
       this.newPkg = {
         barcode: '',
         description: '',
         priority: 1,
         pickupLocationId: '',
-        dropoffLocationId: ''
+        dropoffLocationId: '',
+        assignedCourierId: ''
       };
-      
-      toast.info("Yeni paket kuryeye eklendi!");
+
+      toast.info(assignedCourierId ? "İş emri oluşturuldu ve kuryeye atandı!" : "İş emri oluşturuldu ve havuza eklendi!");
     },
     logout() {
       localStorage.clear();
@@ -1461,11 +2040,15 @@ export default {
   flex-direction: row;
 }
 
-.pool-tab, .new-tab, .vehicles-tab {
+.pool-tab, .new-tab, .vehicles-tab, .dashboard-tab, .couriers-tab, .locations-tab, .reports-tab {
   padding: 20px;
   overflow-y: auto;
   align-items: flex-start;
   justify-content: center;
+}
+.dashboard-tab, .couriers-tab, .locations-tab, .reports-tab {
+  flex-direction: column;
+  width: 100%;
 }
 
 .centered-panel {
@@ -1732,5 +2315,90 @@ export default {
 .btn-icon.delete:hover {
   background: #5a2a2a;
   border-color: #ffcccc;
+}
+
+/* Dashboard (Özet) Sekmesi */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 15px;
+  width: 100%;
+  max-width: 900px;
+}
+.stat-card {
+  background: rgba(30, 30, 30, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+}
+.stat-card-warning {
+  border-color: rgba(255, 152, 0, 0.4);
+}
+.stat-icon {
+  font-size: 26px;
+  margin-bottom: 8px;
+}
+.stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #fff;
+}
+.stat-label {
+  font-size: 12px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 4px;
+}
+.occupancy-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.occupancy-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+.occupancy-name {
+  width: 160px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: #ddd;
+}
+.occupancy-bar-track {
+  flex-grow: 1;
+  height: 10px;
+  background: #111;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.occupancy-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4CAF50, #8bc34a);
+  border-radius: 5px;
+  transition: width 0.3s ease;
+}
+.occupancy-count {
+  width: 70px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 12px;
+  color: #aaa;
+}
+.hint-text {
+  margin-top: 15px;
+  font-size: 11px;
+  color: #666;
+  font-style: italic;
+}
+
+/* Kurye Devri Kutusu */
+.transfer-box {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px dashed #444;
 }
 </style>
