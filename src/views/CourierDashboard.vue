@@ -242,13 +242,15 @@ export default {
       return this.myPackages.filter(p => p.dropoffLocId === this.selectedNextStop.id);
     },
     availableNextStops() {
+      // Not: mevcut konum artık listeden çıkarılmıyor. Alınacak/teslim edilecek bir paket
+      // tam olarak bulunduğunuz noktadaysa (örn. paketin pickup'ı = mevcut konumunuz), o
+      // konum yine de "Gidilecek Konum" olarak seçilebilmeli — aksi halde o paketi almanın
+      // hiçbir yolu kalmıyordu (dropdown boş görünüyordu).
       const targetLocationIds = new Set();
       this.pendingPackages.forEach(pkg => targetLocationIds.add(pkg.pickupLocId));
       this.myPackages.forEach(pkg => targetLocationIds.add(pkg.dropoffLocId));
-      
-      return this.locations.filter(loc => 
-        loc.id !== this.currentLocation?.id && targetLocationIds.has(loc.id)
-      );
+
+      return this.locations.filter(loc => targetLocationIds.has(loc.id));
     }
   },
   async mounted() {
@@ -405,8 +407,12 @@ export default {
             }
           }
 
-          // Pass coordinate to Telemetry Service which buffers and sends it
-          telemetry.addCoordinate(lat, lng, false);
+          // KVKK: Konum sadece kurye elinde fiilen teslimat/materyal taşırken toplanır.
+          // Elinde hiç paket yokken (örn. bir merkeze almaya giderken) GPS backend'e hiç
+          // gönderilmez — bu süre boyunca kurye Canlı Harita'da görünmez, bilerek.
+          if (this.myPackages.length > 0) {
+            telemetry.addCoordinate(lat, lng, false);
+          }
         },
         (error) => console.warn("GPS Hatası:", error),
         { enableHighAccuracy: true, timeout: 5000 }
