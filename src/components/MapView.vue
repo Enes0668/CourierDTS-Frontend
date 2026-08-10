@@ -168,7 +168,7 @@ export default {
     drawActiveRoute(routeData) {
       this.routeLayerGroup.clearLayers();
       this.previewLayerGroup.clearLayers();
-      
+
       // routeLayerGroup temizlendiği için path de silindi, referansını sıfırlıyoruz
       this.courierPathLayer = null;
 
@@ -180,10 +180,11 @@ export default {
       L.marker(startCoords, { icon: startIcon }).bindPopup('Başlangıç: ' + routeData.start.name).addTo(this.routeLayerGroup);
       L.marker(endCoords, { icon: endIcon }).bindPopup('Hedef: ' + routeData.end.name).addTo(this.routeLayerGroup);
 
-      const pathLatLngs = routeData.coordinates.map(coord => [coord.lat, coord.lng]);
-      const polyline = L.polyline(pathLatLngs, LINE_STYLES.PREVIEW_ROUTE).addTo(this.routeLayerGroup);
-
-      this.map.fitBounds(polyline.getBounds(), { padding: MAP_SETTINGS.BOUNDS_PADDING });
+      // Kuryenin fiilen hangi yoldan gideceği önceden bilinmediği için burada artık
+      // önceden hesaplanmış (OSRM) bir rota çizilmiyor — gerçek güzergah, GPS geldikçe
+      // updateCourierPosition() içindeki courierPathLayer ile canlı olarak oluşuyor.
+      // Haritayı sadece başlangıç/hedef iki noktasına göre kadrajlıyoruz.
+      this.map.fitBounds(L.latLngBounds([startCoords, endCoords]), { padding: MAP_SETTINGS.BOUNDS_PADDING });
     },
     getCourierIcon(angle) {
       return L.divIcon({

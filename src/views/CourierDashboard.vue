@@ -466,27 +466,16 @@ export default {
 
         const courierId = localStorage.getItem('courier_id') || 1;
 
-        let coordinates = [];
-        let plannedDistanceMeters = 0;
-        let startLng, startLat, endLng, endLat;
-
-        try {
-          startLng = this.currentLocation.longitude || this.currentLocation.lng;
-          startLat = this.currentLocation.latitude || this.currentLocation.lat;
-          endLng = this.selectedNextStop.longitude || this.selectedNextStop.lng;
-          endLat = this.selectedNextStop.latitude || this.selectedNextStop.lat;
-
-          const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
-          const res = await fetch(osrmUrl);
-          const data = await res.json();
-
-          if(data.routes && data.routes.length > 0) {
-              coordinates = data.routes[0].geometry.coordinates.map(c => ({ lat: c[1], lng: c[0] }));
-              plannedDistanceMeters = data.routes[0].distance || 0;
-          }
-        } catch(e) {
-          console.warn("OSRM rotası alınamadı.", e);
-        }
+        // Kuryenin fiilen hangi yoldan gideceğini önceden bilmiyoruz (trafik, kuryenin
+        // kendi tercihi vb.), bu yüzden artık OSRM'den önceden bir rota çizdirmiyoruz.
+        // Gerçek güzergah, GPS geldikçe MapView'de courierPathLayer olarak zaten canlı
+        // çiziliyor. plannedPath/plannedDistanceMeters bu yüzden boş gönderiliyor.
+        const coordinates = [];
+        const plannedDistanceMeters = 0;
+        const startLng = this.currentLocation.longitude || this.currentLocation.lng;
+        const startLat = this.currentLocation.latitude || this.currentLocation.lat;
+        const endLng = this.selectedNextStop.longitude || this.selectedNextStop.lng;
+        const endLat = this.selectedNextStop.latitude || this.selectedNextStop.lat;
 
         if (this.currentJourneyId) {
           // Aynı seferin (Sefer/Tour) içinde yeni bir durağa geçiyoruz — /journeys/start'ı
@@ -523,31 +512,21 @@ export default {
         telemetry.setContext(courierId, this.currentJourneyId);
         telemetry.startDelivery(this.currentLocation.name, this.selectedNextStop.name, plannedDistanceMeters, coordinates);
 
-        try {
-          // OSRM verisi geldikten sonra routeData'yı TEK SEFERDE atıyoruz.
-          // Bu sayede MapView içindeki "watch" mekanizması tetiklenir.
-          this.routeData = {
-            start: {
-              ...this.currentLocation,
-              lat: startLat,
-              lng: startLng
-            },
-            end: {
-              ...this.selectedNextStop,
-              lat: endLat,
-              lng: endLng
-            },
-            coordinates: coordinates
-          };
-        } catch(e) {
-          console.error("Rota verisi oluşturulamadı", e);
-          // Hata durumunda boş çizgi atayalım ki harita çökmesin
-          this.routeData = {
-            start: { lat: this.currentLocation.latitude || this.currentLocation.lat, lng: this.currentLocation.longitude || this.currentLocation.lng },
-            end: { lat: this.selectedNextStop.latitude || this.selectedNextStop.lat, lng: this.selectedNextStop.longitude || this.selectedNextStop.lng },
-            coordinates: []
-          };
-        }
+        // Haritada sadece başlangıç/hedef işaretçileri gösterilecek; aradaki gerçek
+        // güzergah önceden çizilmiyor, GPS ile canlı oluşuyor (bkz. MapView.drawActiveRoute).
+        this.routeData = {
+          start: {
+            ...this.currentLocation,
+            lat: startLat,
+            lng: startLng
+          },
+          end: {
+            ...this.selectedNextStop,
+            lat: endLat,
+            lng: endLng
+          },
+          coordinates: coordinates
+        };
         // Kuryeyi başlangıç noktasına yerleştir
         this.mockPosition = {
           lat: this.currentLocation.latitude || this.currentLocation.lat,
