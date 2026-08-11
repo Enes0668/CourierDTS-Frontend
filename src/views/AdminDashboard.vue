@@ -511,6 +511,7 @@
             <div class="pkg-sub">
               <small>
                 🕒 {{ formatHistoryDate(h.actionTime || h.ActionTime) }}
+                · 🛵 {{ getHistoryCourierLabel(h) }}
                 <span v-if="h.notes || h.Notes"> · 📝 {{ h.notes || h.Notes }}</span>
               </small>
             </div>
@@ -1018,6 +1019,9 @@ export default {
       }
 
       if (tabName === 'reports') {
+        if (this.couriers.length === 0) {
+          try { this.couriers = await dataService.getCouriers(); } catch (e) { console.warn(e); }
+        }
         await this.loadReports();
       }
     },
@@ -1215,6 +1219,21 @@ export default {
       if (!dateStr) return '-';
       const d = new Date(dateStr);
       return isNaN(d.getTime()) ? dateStr : d.toLocaleString('tr-TR');
+    },
+    /**
+     * Doküman "Raporlama" maddesi kayıtların kurye bilgisiyle listelenmesini istiyor.
+     * GET /packagehistories'in kurye bilgisini tam olarak hangi alan adıyla döndürdüğü
+     * (düz courierId mi, join'lenmiş courierName mi, yoksa hiç mi) canlı backend'e karşı
+     * teyit edilemediği için, olası tüm alan adları burada sırayla denenir.
+     */
+    getHistoryCourierLabel(h) {
+      const directName = h.courierName || h.CourierName;
+      if (directName) return directName;
+
+      const courierId = h.courierId ?? h.CourierId;
+      if (courierId != null) return this.getCourierName(courierId);
+
+      return 'Bilinmiyor';
     },
     async loadVehicles() {
       try {
