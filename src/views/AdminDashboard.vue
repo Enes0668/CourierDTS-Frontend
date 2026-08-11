@@ -149,9 +149,13 @@
         </div>
         
         <div class="map-collapsible-content">
+          <div class="route-legend">
+            <span><span class="legend-dot" style="background:#ff5722;"></span> Normal rota</span>
+            <span><span class="legend-dot" style="background:#9c27b0;"></span> Devredilmiş paket (kurye değişti)</span>
+          </div>
           <div class="map-container">
             <!-- Harita Bileşeni -->
-            <MapView :courierPosition="mockAdminPosition" :telemetryRoute="activeCourierRoute" :showLivePath="false" />
+            <MapView :courierPosition="mockAdminPosition" :telemetryRoute="activeCourierRoute" :telemetryRouteColor="activeRouteColor" :showLivePath="false" :stops="courierStops" />
             <div v-if="isRouteLoading" class="map-loading-overlay">
               <div class="map-loading-spinner"></div>
               <span>Rota yükleniyor...</span>
@@ -438,6 +442,13 @@
               </div>
             </div>
             <div class="pool-actions">
+              <button
+                v-if="(courierOnHandCounts[c.id] || 0) > 0"
+                @click="openTransferModal(c.id)"
+                class="icon-btn"
+                style="filter: none;"
+                title="Kaza/Acil Durum: Paketlerini Başka Kuryeye Devret"
+              >🔁</button>
               <button @click="openEditCourierModal(c)" class="icon-btn edit-btn" title="Kuryeyi Düzenle">✏️</button>
               <button @click="removeCourier(c.id)" class="icon-btn delete-btn" title="Kuryeyi Sil">🗑️</button>
             </div>
@@ -549,6 +560,33 @@
             <button type="submit" class="primary-btn">Kaydet</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- KURYE DEVRİ MODAL (Kaza/Acil Durum) -->
+    <div v-if="showTransferModal" class="modal-overlay" @click.self="showTransferModal = false">
+      <div class="modal-content">
+        <h3>🔁 Kurye Devri (Kaza/Acil Durum)</h3>
+        <p class="hint-text" style="margin-top: -5px;">
+          <strong>{{ getCourierName(transferModalFromCourierId) }}</strong> kuryesinin üzerindeki
+          <strong>{{ courierOnHandCounts[transferModalFromCourierId] || 0 }} paket</strong>,
+          seçtiğiniz kuryeye devredilip kaldığı yerden ona atanacak.
+        </p>
+        <div class="form-group" style="width: 100%; margin-top: 15px;">
+          <label>Devredilecek Kurye</label>
+          <select v-model="transferModalToCourierId">
+            <option value="" disabled>Seçiniz...</option>
+            <option
+              v-for="c in couriers.filter(c => c.id !== transferModalFromCourierId)"
+              :key="'transfer-modal-' + c.id"
+              :value="c.id"
+            >🛵 {{ c.name }}</option>
+          </select>
+        </div>
+        <div class="modal-actions" style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px; width: 100%">
+          <button type="button" class="logout-btn-top" @click="showTransferModal = false">İptal</button>
+          <button type="button" class="primary-btn" :disabled="!transferModalToCourierId" @click="confirmTransferModal">Devret</button>
+        </div>
       </div>
     </div>
 
@@ -723,6 +761,7 @@ export default {
       mockAdminPosition: null,
       activeCourierRoute: null,
       isRouteLoading: false,
+      courierStops: [],
 
       // Dashboard (Özet) verisi — /dashboard'dan gelen ham veri, şema teyit edilemediği için
       // computed alanlar bunu okuyamazsa packages/couriers listesinden hesaplanmış değere düşer.
@@ -730,6 +769,16 @@ export default {
 
       // Kurye Devri (Nakil)
       transferToCourierId: '',
+      // Kuryeler sekmesinden (kaza/acil durum) yapılan devir için ayrı modal state'i.
+      showTransferModal: false,
+      transferModalFromCourierId: null,
+      transferModalToCourierId: '',
+      // Devredilmiş paketlerin barkodları — barkod aramada bu paketlerin rotası farklı
+      // renkte (mor) çizilsin diye tarayıcıda kalıcı olarak saklanıyor (sayfa yenilense
+      // de kaybolmasın). Backend'de bunu ayırt eden bir alan olmadığından istemci
+      // tarafında tutuyoruz.
+      transferredBarcodes: JSON.parse(localStorage.getItem('transferred_barcodes') || '[]'),
+      activeRouteColor: '#ff5722',
 
       // Kuryeler (Kullanıcı Tanımlama)
       showEditCourierModal: false,
@@ -1053,17 +1102,50 @@ export default {
         this.dashboardStats = null;
       }
     },
-    async doTransferCourierPackages() {
-      if (!this.transferToCourierId) return;
-      const fromCourier = this.getCourierName(this.selectedCourierId);
-      const toCourier = this.getCourierName(this.transferToCourierId);
-      if (!confirm(`"${fromCourier}" kuryesindeki TÜM sonuçlanmamış paketler "${toCourier}" kuryesine devredilecek. Onaylıyor musunuz?`)) return;
+    /**
+     * Bir kuryenin o an elindeki (PickedUp/InTransit) paketlerinin barkodlarını döner.
+     * Devir öncesi "hangi paketler devrediliyor" bilgisini yakalamak için kullanılıyor —
+     * transfer isteğinden SONRA bu bilgiyi packages listesinden çıkarmak güvenilir
+     * olmuyor, çünkü assignedCourierId o noktada zaten yeni kuryeye güncellenmiş oluyor.
+     */
+    getCourierOnHandBarcodes(courierId) {
+      if (!Array.isArray(this.packages)) return [];
+      return this.packages
+        .filter(p => {
+          const pCourierId = p.assignedCourierId !== undefined ? p.assignedCourierId : p.AssignedCourierId;
+          const status = p.status || p.Status;
+          return pCourierId === courierId && (status === 'PickedUp' || status === 'InTransit');
+        })
+        .map(p => p.barcode || p.Barcode)
+        .filter(Boolean);
+    },
+    /**
+     * Kurye Devri (Nakil) — hem Canlı Takip'teki hızlı devir kutusu hem de Kuryeler
+     * sekmesindeki "kaza/acil durum" modalı bu ortak metodu kullanıyor.
+     */
+    async transferCourierPackagesTo(fromCourierId, toCourierId) {
+      if (!fromCourierId || !toCourierId) return false;
+      const fromCourier = this.getCourierName(fromCourierId);
+      const toCourier = this.getCourierName(toCourierId);
+      if (!confirm(`"${fromCourier}" kuryesindeki TÜM sonuçlanmamış paketler "${toCourier}" kuryesine devredilecek. Onaylıyor musunuz?`)) return false;
+
+      const transferredBarcodesNow = this.getCourierOnHandBarcodes(fromCourierId);
 
       try {
-        await dataService.transferCourierPackages(this.selectedCourierId, this.transferToCourierId);
+        await dataService.transferCourierPackages(fromCourierId, toCourierId);
         toast.success(`Paketler ${toCourier} kuryesine devredildi.`);
-        this.transferToCourierId = '';
+
+        // Devredilen paketlerin rotası ileride barkodla arandığında farklı renkte
+        // (mor) çizilsin diye barkodlarını kalıcı olarak not ediyoruz.
+        if (transferredBarcodesNow.length > 0) {
+          const merged = Array.from(new Set([...this.transferredBarcodes, ...transferredBarcodesNow]));
+          this.transferredBarcodes = merged;
+          localStorage.setItem('transferred_barcodes', JSON.stringify(merged));
+        }
+
         await this.fetchData();
+        await this.loadCourierOnHandCounts();
+        return true;
       } catch (err) {
         let msg = "Kurye devri sırasında bir hata oluştu";
         if (err.response && err.response.data) {
@@ -1072,7 +1154,23 @@ export default {
           else if (err.response.data.title) msg = err.response.data.title;
         }
         toast.error(msg);
+        return false;
       }
+    },
+    async doTransferCourierPackages() {
+      if (!this.transferToCourierId) return;
+      const ok = await this.transferCourierPackagesTo(this.selectedCourierId, this.transferToCourierId);
+      if (ok) this.transferToCourierId = '';
+    },
+    openTransferModal(courierId) {
+      this.transferModalFromCourierId = courierId;
+      this.transferModalToCourierId = '';
+      this.showTransferModal = true;
+    },
+    async confirmTransferModal() {
+      if (!this.transferModalToCourierId) return;
+      const ok = await this.transferCourierPackagesTo(this.transferModalFromCourierId, this.transferModalToCourierId);
+      if (ok) this.showTransferModal = false;
     },
     async submitNewCourier() {
       try {
@@ -1463,6 +1561,65 @@ export default {
         console.warn("Seçili kuryenin rotası çekilemedi.", error);
       }
     },
+    /**
+     * Kuryenin gün içinde alım/teslim gibi bir işlem yaptığı her durağı PackageHistories'ten
+     * türetir. Journey satırı ara durakları ayrı ayrı tutmadığı için (bkz. sohbetteki mimari
+     * notlar — tek journey/gün + replan), "kuryenin küçük journey'i nerede bittiği" bilgisini
+     * ancak bu şekilde, gerçek işlem kayıtlarından elde edebiliyoruz.
+     */
+    async fetchCourierStops(courierId) {
+      if (!courierId) {
+        this.courierStops = [];
+        return;
+      }
+      try {
+        const histories = await dataService.getPackageHistories({ courierId });
+        // Backend'in courierId filtresini gerçekten uygulayıp uygulamadığından emin
+        // olamadığımız için istemci tarafında da süzüyoruz (alan yoksa güvenli tarafta
+        // kalıp kaydı eleme).
+        const relevant = histories.filter(h => {
+          const hCourierId = h.courierId ?? h.CourierId;
+          return hCourierId == null || hCourierId == courierId;
+        });
+
+        const groups = new Map();
+        relevant.forEach(h => {
+          const locationId = h.locationId ?? h.LocationId;
+          if (locationId == null) return;
+          const loc = this.locations.find(l => l.id == locationId);
+          if (!loc) return;
+          const lat = loc.latitude ?? loc.lat;
+          const lng = loc.longitude ?? loc.lng;
+          if (lat == null || lng == null) return;
+
+          const actionTime = h.actionTime ?? h.ActionTime;
+          if (!groups.has(locationId)) {
+            groups.set(locationId, {
+              lat, lng,
+              name: loc.name,
+              firstTime: actionTime,
+              actions: []
+            });
+          }
+          const group = groups.get(locationId);
+          group.actions.push({
+            time: this.formatHistoryDate(actionTime),
+            label: h.actionType ?? h.ActionType ?? h.action ?? 'İşlem'
+          });
+          if (actionTime && (!group.firstTime || new Date(actionTime) < new Date(group.firstTime))) {
+            group.firstTime = actionTime;
+          }
+        });
+
+        // Durakları zaman sırasına göre numaralandırıyoruz (1, 2, 3...) ki hangi
+        // "küçük journey"in nerede bittiği haritada sırayla okunabilsin.
+        this.courierStops = Array.from(groups.values())
+          .sort((a, b) => new Date(a.firstTime) - new Date(b.firstTime));
+      } catch (error) {
+        console.warn("Kuryenin durak geçmişi çekilemedi.", error);
+        this.courierStops = [];
+      }
+    },
     async selectCourier(courierId) {
       this.selectedCourierId = courierId;
       // Bir sonraki periyodik polling'i (en fazla 10sn) beklemeden, tıklanan kuryenin
@@ -1474,9 +1631,16 @@ export default {
       // Eski kuryenin rotası ekranda kalıp yeni kuryeninkiyle karıştırılmasın diye
       // hemen temizleyip, yeni rota gelene kadar bir yükleniyor göstergesi gösteriyoruz.
       this.activeCourierRoute = null;
+      this.courierStops = [];
+      // Bir önceki barkod aramasından kalmış olabilecek mor rengi sıfırlıyoruz —
+      // kuryenin kendi canlı rotası her zaman standart turuncu ile gösterilir.
+      this.activeRouteColor = '#ff5722';
       this.isRouteLoading = true;
       try {
-        await this.fetchSelectedCourierRoute();
+        await Promise.all([
+          this.fetchSelectedCourierRoute(),
+          this.fetchCourierStops(courierId)
+        ]);
       } finally {
         this.isRouteLoading = false;
       }
@@ -1495,6 +1659,7 @@ export default {
           }
 
           await this.fetchSelectedCourierRoute();
+          await this.fetchCourierStops(this.selectedCourierId);
 
         } catch (error) {
           console.warn("Canlı izleme verisi çekilemedi (Simülasyon devam ediyor).", error);
@@ -1511,18 +1676,25 @@ export default {
       }
     },
     async searchTourHistory() {
-      if (!this.barcodeSearch.trim()) {
+      const barcode = this.barcodeSearch.trim();
+      if (!barcode) {
         toast.error("Lütfen bir barkod girin.");
         return;
       }
       this.activeCourierRoute = null;
       this.isRouteLoading = true;
       try {
-        const historyData = await dataService.getTourHistoryByBarcode(this.barcodeSearch.trim());
+        const historyData = await dataService.getTourHistoryByBarcode(barcode);
         if (historyData && historyData.length > 0) {
           // Flatten if multiple tours exist, or just show the first one
           this.activeCourierRoute = historyData.flat();
-          toast.success("Geçmiş rota haritaya çizildi.");
+          // Bu paket daha önce Kurye Devri ile başka bir kuryeye aktarıldıysa, seferi
+          // boyunca kurye değiştirdiğini haritada ayırt edilsin diye mor çizgiyle çiziyoruz.
+          const isTransferred = this.transferredBarcodes.includes(barcode);
+          this.activeRouteColor = isTransferred ? '#9c27b0' : '#ff5722';
+          toast.success(isTransferred
+            ? "Geçmiş rota haritaya çizildi (devredilmiş paket — mor çizgi)."
+            : "Geçmiş rota haritaya çizildi.");
         } else {
           toast.error("Bu barkoda ait rota geçmişi bulunamadı.");
         }
@@ -1751,6 +1923,21 @@ export default {
   font-size: 12px;
   font-weight: bold;
   border: 1px solid #ff5252;
+}
+.route-legend {
+  display: flex;
+  gap: 20px;
+  font-size: 12px;
+  color: #aaa;
+  margin-bottom: 10px;
+}
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
 }
 .map-container {
   position: relative;

@@ -37,6 +37,15 @@ const endIcon = L.icon({
   shadowSize: [41, 41]
 });
 
+function getStopIcon(number) {
+  return L.divIcon({
+    html: `<div style="background:#2196F3;color:#fff;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.5);font-family:sans-serif;">${number}</div>`,
+    className: 'stop-marker-icon',
+    iconSize: [26, 26],
+    iconAnchor: [13, 13]
+  });
+}
+
 // Backend'den gelen koordinatlar bazen eksik/yanlış alan adıyla (bkz. dataService
 // normalizasyonu) ya da hiç gelmeyebiliyor. Leaflet, NaN/aralık dışı bir LatLng ile
 // polyline/fitBounds çağrılırsa sert bir hata fırlatıp tüm sayfayı çökertiyor — bu
@@ -56,6 +65,10 @@ export default {
   props: {
     route: Object,
     telemetryRoute: Array,
+    // Turuncu (varsayılan) rota çizgisinin rengi. Devredilmiş bir paketin barkodu
+    // arandığında admin bunu farklı bir renkle (örn. mor) geçirerek, o paketin sefer
+    // boyunca kurye değiştirdiğini haritada görsel olarak ayırt edilebilir kılabilir.
+    telemetryRouteColor: { type: String, default: '#ff5722' },
     liveSelections: Object,
     courierPosition: Object,
     isDelivered: Boolean,
@@ -64,7 +77,12 @@ export default {
     // türediği için çok kaba kalıyor ve backend'den gelen asıl güvenilir kayıt olan
     // turuncu (telemetryRoute) çizginin üzerini örtüyor. Admin tarafı bunu false
     // vererek sadece konum ikonunu gösterir, birikimli izi çizdirmez.
-    showLivePath: { type: Boolean, default: true }
+    showLivePath: { type: Boolean, default: true },
+    // Kuryenin gün içinde alım/teslim gibi bir işlem yaptığı her durak: [{ lat, lng,
+    // name, actions: [{ time, label }] }]. Journey satırı ara durakları ayrı ayrı
+    // tutmadığı için (bkz. sohbetteki mimari notlar), bu işaretler PackageHistories
+    // verisinden türetiliyor — "kuryenin küçük journey'i nerede bittiği" burada görünür.
+    stops: { type: Array, default: () => [] }
   },
   data() {
     return {
@@ -77,6 +95,7 @@ export default {
     this.routeLayerGroup = null;
     this.previewLayerGroup = null;
     this.telemetryLayerGroup = null;
+    this.stopsLayerGroup = null;
     this.currentAngle = 0;
     this.previousTargetAngle = null;
     this.courierMarker = null;
@@ -84,12 +103,12 @@ export default {
   },
   mounted() {
     this.initMap('map-container');
-    
+
     this.map.on('dragstart', () => {
       if (this.courierPosition) {
         this.isCameraLocked = false;
       }
-    }); 
+    });
 
     if (this.route) {
       this.drawActiveRoute(this.route);
@@ -97,11 +116,20 @@ export default {
     if (this.telemetryRoute) {
       this.drawTelemetryRoute(this.telemetryRoute);
     }
+    if (this.stops && this.stops.length > 0) {
+      this.drawStops(this.stops);
+    }
     if (this.courierPosition) {
       this.updateCourierPosition(this.courierPosition, null, this.isCameraLocked);
     }
   },
   watch: {
+    stops: {
+      deep: true,
+      handler(newStops) {
+        this.drawStops(newStops);
+      }
+    },
     liveSelections: {
       deep: true,
       handler(newSelections) {
@@ -114,8 +142,19 @@ export default {
     telemetryRoute(newRoute) {
       this.drawTelemetryRoute(newRoute);
     },
+    telemetryRouteColor() {
+      // Aynı rota noktaları kalıp sadece rengin değiştiği durum (örn. az önce
+      // devredildiği anlaşılan bir paketin barkodu yeniden arandığında).
+      this.drawTelemetryRoute(this.telemetryRoute);
+    },
     courierPosition(newPos, oldPos) {
       this.updateCourierPosition(newPos, oldPos, this.isCameraLocked);
+      // Kurye ikonu bir durakla aynı koordinata gelip onun üzerine binebiliyor —
+      // kurye hareket ettikçe hangi durağın kaydırılması gerektiği de değişebileceği
+      // için durakları da yeniden çiziyoruz.
+      if (this.stops && this.stops.length > 0) {
+        this.drawStops(this.stops);
+      }
     }
   },
   methods: {
@@ -136,6 +175,47 @@ export default {
       this.routeLayerGroup = L.layerGroup().addTo(this.map);
       this.previewLayerGroup = L.layerGroup().addTo(this.map);
       this.telemetryLayerGroup = L.layerGroup().addTo(this.map);
+      this.stopsLayerGroup = L.layerGroup().addTo(this.map);
+    },
+    drawStops(stops) {
+      try {
+        this.stopsLayerGroup.clearLayers();
+        if (!stops || stops.length === 0) return;
+
+        const courierPos = this.courierPosition;
+        const courierHasValidPos = courierPos && isValidLatLng(courierPos.lat, courierPos.lng);
+
+        stops.forEach((stop, index) => {
+          if (!stop || !isValidLatLng(stop.lat, stop.lng)) return;
+
+          let markerLat = stop.lat;
+          let markerLng = stop.lng;
+
+          // Kuryenin o anki (canlı) konumu tam bu durakla çakışırsa, motor ikonu durak
+          // işaretinin tam üzerine biniyor ve tıklanamaz hale geliyordu. Çakışma
+          // durumunda durağı birkaç metre kaydırarak hem kurye ikonunu hem durak
+          // işaretini görünür/tıklanabilir tutuyoruz.
+          if (courierHasValidPos) {
+            const dLat = markerLat - courierPos.lat;
+            const dLng = markerLng - courierPos.lng;
+            const roughMeters = Math.sqrt(dLat * dLat + dLng * dLng) * 111000;
+            if (roughMeters < 25) {
+              markerLat += 0.00025; // ~25m kuzey-doğuya kaydır
+              markerLng += 0.00025;
+            }
+          }
+
+          const actionsHtml = (stop.actions || [])
+            .map(a => `${a.time || ''} — ${a.label || 'İşlem'}`)
+            .join('<br>');
+
+          L.marker([markerLat, markerLng], { icon: getStopIcon(index + 1), zIndexOffset: 500 })
+            .bindPopup(`<strong>📍 ${stop.name || 'Bilinmeyen Konum'}</strong><br>${actionsHtml}`)
+            .addTo(this.stopsLayerGroup);
+        });
+      } catch (e) {
+        console.error('[MapView] Durak işaretleri çizilirken hata oluştu, harita korunuyor.', e);
+      }
     },
     drawTelemetryRoute(telemetryPoints) {
       try {
@@ -158,7 +238,7 @@ export default {
 
         if (!this.telemetryPolyline) {
           this.telemetryPolyline = L.polyline(pathLatLngs, {
-            color: '#ff5722',
+            color: this.telemetryRouteColor,
             weight: 4,
             opacity: 0.8,
             dashArray: '10, 10'
@@ -169,6 +249,7 @@ export default {
         } else {
           // Just update points, do not clear layers or zoom
           this.telemetryPolyline.setLatLngs(pathLatLngs);
+          this.telemetryPolyline.setStyle({ color: this.telemetryRouteColor });
         }
       } catch (e) {
         console.error('[MapView] Telemetri rotası çizilirken hata oluştu, harita korunuyor.', e);
