@@ -1,5 +1,26 @@
 import api from '@/api/index.js';
 
+/**
+ * GPS/telemetri noktalarını her zaman { lat, lng } alan adlarına normalize eder.
+ * Backend bazen "Latitude/Longitude" (PascalCase) ya da "latitude/longitude"
+ * (camelCase, tam ad) döndürebilir — bunlar normalize edilmeden Leaflet'e geçilirse
+ * koordinatlar NaN'a düşer ve harita çizimi (polyline/fitBounds) sert bir hata
+ * fırlatıp tüm ekranı kaplayabilir. Dizi içinde dizi varsa (birden fazla tur) da
+ * derinlemesine normalize eder.
+ */
+function normalizeGpsPoint(p) {
+  if (Array.isArray(p)) return p.map(normalizeGpsPoint);
+  if (!p || typeof p !== 'object') return p;
+  const lat = p.lat ?? p.Lat ?? p.latitude ?? p.Latitude;
+  const lng = p.lng ?? p.Lng ?? p.longitude ?? p.Longitude;
+  return {
+    ...p,
+    lat: Number(lat),
+    lng: Number(lng),
+    timestamp: p.timestamp ?? p.Timestamp
+  };
+}
+
 const cache = {
   locations: null,
   couriers: null,
@@ -218,7 +239,8 @@ export const dataService = {
     try {
       const response = await api.get(`/packages/route?barcode=${barcode}`);
       const data = response.data?.items ? response.data.items : (response.data || []);
-      return Array.isArray(data) ? data : (data.data || []);
+      const points = Array.isArray(data) ? data : (data.data || []);
+      return points.map(normalizeGpsPoint);
     } catch (error) {
       console.error("API Error (getTourHistoryByBarcode):", error);
       throw error;
@@ -234,7 +256,8 @@ export const dataService = {
     try {
       const response = await api.get(`/telemetry?journeyId=${journeyId}`);
       const data = response.data?.items ? response.data.items : (response.data || []);
-      return Array.isArray(data) ? data : (data.data || []);
+      const points = Array.isArray(data) ? data : (data.data || []);
+      return points.map(normalizeGpsPoint);
     } catch (error) {
       console.error("API Error (getTelemetry):", error);
       throw error;

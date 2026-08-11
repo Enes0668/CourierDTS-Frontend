@@ -37,6 +37,20 @@ const endIcon = L.icon({
   shadowSize: [41, 41]
 });
 
+// Backend'den gelen koordinatlar bazen eksik/yanlış alan adıyla (bkz. dataService
+// normalizasyonu) ya da hiç gelmeyebiliyor. Leaflet, NaN/aralık dışı bir LatLng ile
+// polyline/fitBounds çağrılırsa sert bir hata fırlatıp tüm sayfayı çökertiyor — bu
+// yüzden haritaya geçmeden önce her koordinatı burada doğruluyoruz.
+function isValidLatLng(lat, lng) {
+  // Leaflet sayısal string koordinatları kendi içinde (+lat) sorunsuz kabul ediyor,
+  // burada da aynı toleransla önce sayıya çeviriyoruz — asıl reddedilmesi gereken
+  // undefined/null/NaN veya harita dışı (aralık dışı) değerler.
+  const nLat = Number(lat);
+  const nLng = Number(lng);
+  return Number.isFinite(nLat) && Number.isFinite(nLng) &&
+    Math.abs(nLat) <= 90 && Math.abs(nLng) <= 180;
+}
+
 export default {
   name: 'MapView',
   props: {
@@ -44,7 +58,13 @@ export default {
     telemetryRoute: Array,
     liveSelections: Object,
     courierPosition: Object,
-    isDelivered: Boolean
+    isDelivered: Boolean,
+    // Kuryenin kendi ekranında, hareket ettikçe canlı biriken yeşil iz (courierPathLayer)
+    // faydalıdır. Ama admin ekranında bu iz sadece admin'in ~10sn'lik polling'inden
+    // türediği için çok kaba kalıyor ve backend'den gelen asıl güvenilir kayıt olan
+    // turuncu (telemetryRoute) çizginin üzerini örtüyor. Admin tarafı bunu false
+    // vererek sadece konum ikonunu gösterir, birikimli izi çizdirmez.
+    showLivePath: { type: Boolean, default: true }
   },
   data() {
     return {
@@ -118,73 +138,99 @@ export default {
       this.telemetryLayerGroup = L.layerGroup().addTo(this.map);
     },
     drawTelemetryRoute(telemetryPoints) {
-      if (!telemetryPoints || telemetryPoints.length === 0) {
-        this.telemetryLayerGroup.clearLayers();
-        this.telemetryPolyline = null;
-        return;
-      }
+      try {
+        if (!telemetryPoints || telemetryPoints.length === 0) {
+          this.telemetryLayerGroup.clearLayers();
+          this.telemetryPolyline = null;
+          return;
+        }
 
-      const pathLatLngs = telemetryPoints.map(coord => [coord.lat, coord.lng]);
-      
-      if (!this.telemetryPolyline) {
-        this.telemetryPolyline = L.polyline(pathLatLngs, {
-          color: '#ff5722',
-          weight: 4,
-          opacity: 0.8,
-          dashArray: '10, 10'
-        }).addTo(this.telemetryLayerGroup);
-        
-        // Only fit bounds on first load
-        this.map.fitBounds(this.telemetryPolyline.getBounds(), { padding: MAP_SETTINGS.BOUNDS_PADDING });
-      } else {
-        // Just update points, do not clear layers or zoom
-        this.telemetryPolyline.setLatLngs(pathLatLngs);
+        const pathLatLngs = telemetryPoints
+          .filter(coord => coord && isValidLatLng(coord.lat, coord.lng))
+          .map(coord => [coord.lat, coord.lng]);
+
+        if (pathLatLngs.length === 0) {
+          console.warn('[MapView] Telemetri noktalarının hiçbiri geçerli koordinat içermiyor, rota çizilmedi.', telemetryPoints);
+          this.telemetryLayerGroup.clearLayers();
+          this.telemetryPolyline = null;
+          return;
+        }
+
+        if (!this.telemetryPolyline) {
+          this.telemetryPolyline = L.polyline(pathLatLngs, {
+            color: '#ff5722',
+            weight: 4,
+            opacity: 0.8,
+            dashArray: '10, 10'
+          }).addTo(this.telemetryLayerGroup);
+
+          // Only fit bounds on first load
+          this.map.fitBounds(this.telemetryPolyline.getBounds(), { padding: MAP_SETTINGS.BOUNDS_PADDING });
+        } else {
+          // Just update points, do not clear layers or zoom
+          this.telemetryPolyline.setLatLngs(pathLatLngs);
+        }
+      } catch (e) {
+        console.error('[MapView] Telemetri rotası çizilirken hata oluştu, harita korunuyor.', e);
       }
     },
     drawPreview(selections) {
-      this.previewLayerGroup.clearLayers();
-      if (!selections || (!selections.start && !selections.end)) return;
+      try {
+        this.previewLayerGroup.clearLayers();
+        if (!selections || (!selections.start && !selections.end)) return;
 
-      const bounds = [];
-      
-      if (selections.start) {
-        const coords = [selections.start.lat, selections.start.lng];
-        L.marker(coords, { icon: startIcon }).bindPopup('Başlangıç: ' + selections.start.name).addTo(this.previewLayerGroup);
-        bounds.push(coords);
-      }
-      
-      if (selections.end) {
-        const coords = [selections.end.lat, selections.end.lng];
-        L.marker(coords, { icon: endIcon }).bindPopup('Hedef: ' + selections.end.name).addTo(this.previewLayerGroup);
-        bounds.push(coords);
-      }
+        const bounds = [];
 
-      if (bounds.length === 1) {
-        this.map.flyTo(bounds[0], MAP_SETTINGS.FLY_TO_ZOOM, { duration: MAP_SETTINGS.FLY_TO_DURATION });
-      } else if (bounds.length === 2) {
-        this.map.fitBounds(L.polyline(bounds).getBounds(), { padding: MAP_SETTINGS.BOUNDS_PADDING });
+        if (selections.start && isValidLatLng(selections.start.lat, selections.start.lng)) {
+          const coords = [selections.start.lat, selections.start.lng];
+          L.marker(coords, { icon: startIcon }).bindPopup('Başlangıç: ' + selections.start.name).addTo(this.previewLayerGroup);
+          bounds.push(coords);
+        }
+
+        if (selections.end && isValidLatLng(selections.end.lat, selections.end.lng)) {
+          const coords = [selections.end.lat, selections.end.lng];
+          L.marker(coords, { icon: endIcon }).bindPopup('Hedef: ' + selections.end.name).addTo(this.previewLayerGroup);
+          bounds.push(coords);
+        }
+
+        if (bounds.length === 1) {
+          this.map.flyTo(bounds[0], MAP_SETTINGS.FLY_TO_ZOOM, { duration: MAP_SETTINGS.FLY_TO_DURATION });
+        } else if (bounds.length === 2) {
+          this.map.fitBounds(L.polyline(bounds).getBounds(), { padding: MAP_SETTINGS.BOUNDS_PADDING });
+        }
+      } catch (e) {
+        console.error('[MapView] Önizleme çizilirken hata oluştu, harita korunuyor.', e);
       }
     },
     drawActiveRoute(routeData) {
-      this.routeLayerGroup.clearLayers();
-      this.previewLayerGroup.clearLayers();
+      try {
+        this.routeLayerGroup.clearLayers();
+        this.previewLayerGroup.clearLayers();
 
-      // routeLayerGroup temizlendiği için path de silindi, referansını sıfırlıyoruz
-      this.courierPathLayer = null;
+        // routeLayerGroup temizlendiği için path de silindi, referansını sıfırlıyoruz
+        this.courierPathLayer = null;
 
-      if (!routeData) return;
+        if (!routeData) return;
 
-      const startCoords = [routeData.start.lat, routeData.start.lng];
-      const endCoords = [routeData.end.lat, routeData.end.lng];
+        const startCoords = [routeData.start.lat, routeData.start.lng];
+        const endCoords = [routeData.end.lat, routeData.end.lng];
 
-      L.marker(startCoords, { icon: startIcon }).bindPopup('Başlangıç: ' + routeData.start.name).addTo(this.routeLayerGroup);
-      L.marker(endCoords, { icon: endIcon }).bindPopup('Hedef: ' + routeData.end.name).addTo(this.routeLayerGroup);
+        if (!isValidLatLng(startCoords[0], startCoords[1]) || !isValidLatLng(endCoords[0], endCoords[1])) {
+          console.warn('[MapView] Geçersiz başlangıç/hedef koordinatı, rota çizilmedi.', routeData);
+          return;
+        }
 
-      // Kuryenin fiilen hangi yoldan gideceği önceden bilinmediği için burada artık
-      // önceden hesaplanmış (OSRM) bir rota çizilmiyor — gerçek güzergah, GPS geldikçe
-      // updateCourierPosition() içindeki courierPathLayer ile canlı olarak oluşuyor.
-      // Haritayı sadece başlangıç/hedef iki noktasına göre kadrajlıyoruz.
-      this.map.fitBounds(L.latLngBounds([startCoords, endCoords]), { padding: MAP_SETTINGS.BOUNDS_PADDING });
+        L.marker(startCoords, { icon: startIcon }).bindPopup('Başlangıç: ' + routeData.start.name).addTo(this.routeLayerGroup);
+        L.marker(endCoords, { icon: endIcon }).bindPopup('Hedef: ' + routeData.end.name).addTo(this.routeLayerGroup);
+
+        // Kuryenin fiilen hangi yoldan gideceği önceden bilinmediği için burada artık
+        // önceden hesaplanmış (OSRM) bir rota çizilmiyor — gerçek güzergah, GPS geldikçe
+        // updateCourierPosition() içindeki courierPathLayer ile canlı olarak oluşuyor.
+        // Haritayı sadece başlangıç/hedef iki noktasına göre kadrajlıyoruz.
+        this.map.fitBounds(L.latLngBounds([startCoords, endCoords]), { padding: MAP_SETTINGS.BOUNDS_PADDING });
+      } catch (e) {
+        console.error('[MapView] Aktif rota çizilirken hata oluştu, harita korunuyor.', e);
+      }
     },
     getCourierIcon(angle) {
       return L.divIcon({
@@ -195,40 +241,51 @@ export default {
       });
     },
     updateCourierPosition(newPos, oldPos, isCameraLocked) {
-      if (!newPos) {
-        if (this.courierMarker) { this.map.removeLayer(this.courierMarker); this.courierMarker = null; }
-        this.currentAngle = 0;
-        this.previousTargetAngle = null;
-        this.courierPathLayer = null; 
-        return;
-      }
-
-      if (!this.courierPathLayer) {
-        this.courierPathLayer = L.polyline([[newPos.lat, newPos.lng]], LINE_STYLES.COURIER_PATH).addTo(this.routeLayerGroup);
-      } else {
-        this.courierPathLayer.addLatLng([newPos.lat, newPos.lng]);
-      }
-
-      if (oldPos && oldPos.lat && oldPos.lng) {
-        const targetAngle = calculateBearing(oldPos, newPos);
-        if (targetAngle !== null) {
-          this.currentAngle = calculateSmoothRotation(this.currentAngle, this.previousTargetAngle, targetAngle);
-          this.previousTargetAngle = targetAngle; 
+      try {
+        if (!newPos) {
+          if (this.courierMarker) { this.map.removeLayer(this.courierMarker); this.courierMarker = null; }
+          this.currentAngle = 0;
+          this.previousTargetAngle = null;
+          this.courierPathLayer = null;
+          return;
         }
-      }
 
-      if (!this.courierMarker) {
-        this.courierMarker = L.marker([newPos.lat, newPos.lng], { 
-          icon: this.getCourierIcon(this.currentAngle), 
-          zIndexOffset: 1000 
-        }).addTo(this.map);
-      } else {
-        this.courierMarker.setLatLng([newPos.lat, newPos.lng]);
-        this.courierMarker.setIcon(this.getCourierIcon(this.currentAngle)); 
-      }
-      
-      if (isCameraLocked) {
-        this.map.panTo([newPos.lat, newPos.lng]);
+        if (!isValidLatLng(newPos.lat, newPos.lng)) {
+          console.warn('[MapView] Geçersiz kurye konumu göz ardı edildi.', newPos);
+          return;
+        }
+
+        if (this.showLivePath) {
+          if (!this.courierPathLayer) {
+            this.courierPathLayer = L.polyline([[newPos.lat, newPos.lng]], LINE_STYLES.COURIER_PATH).addTo(this.routeLayerGroup);
+          } else {
+            this.courierPathLayer.addLatLng([newPos.lat, newPos.lng]);
+          }
+        }
+
+        if (oldPos && isValidLatLng(oldPos.lat, oldPos.lng)) {
+          const targetAngle = calculateBearing(oldPos, newPos);
+          if (targetAngle !== null) {
+            this.currentAngle = calculateSmoothRotation(this.currentAngle, this.previousTargetAngle, targetAngle);
+            this.previousTargetAngle = targetAngle;
+          }
+        }
+
+        if (!this.courierMarker) {
+          this.courierMarker = L.marker([newPos.lat, newPos.lng], {
+            icon: this.getCourierIcon(this.currentAngle),
+            zIndexOffset: 1000
+          }).addTo(this.map);
+        } else {
+          this.courierMarker.setLatLng([newPos.lat, newPos.lng]);
+          this.courierMarker.setIcon(this.getCourierIcon(this.currentAngle));
+        }
+
+        if (isCameraLocked) {
+          this.map.panTo([newPos.lat, newPos.lng]);
+        }
+      } catch (e) {
+        console.error('[MapView] Kurye konumu güncellenirken hata oluştu, harita korunuyor.', e);
       }
     }
   }

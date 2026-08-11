@@ -74,7 +74,7 @@
               v-for="(courier, index) in couriers" 
               :key="'c-' + (courier.id || index)" 
               :class="{ active: selectedCourierId === courier.id }"
-              @click="selectedCourierId = courier.id"
+              @click="selectCourier(courier.id)"
             >
               🛵 {{ courier.name }}
             </li>
@@ -151,7 +151,11 @@
         <div class="map-collapsible-content">
           <div class="map-container">
             <!-- Harita Bileşeni -->
-            <MapView :courierPosition="mockAdminPosition" :telemetryRoute="activeCourierRoute" />
+            <MapView :courierPosition="mockAdminPosition" :telemetryRoute="activeCourierRoute" :showLivePath="false" />
+            <div v-if="isRouteLoading" class="map-loading-overlay">
+              <div class="map-loading-spinner"></div>
+              <span>Rota yükleniyor...</span>
+            </div>
           </div>
         </div>
       </div>
@@ -718,6 +722,7 @@ export default {
       pollingTimer: null,
       mockAdminPosition: null,
       activeCourierRoute: null,
+      isRouteLoading: false,
 
       // Dashboard (Özet) verisi — /dashboard'dan gelen ham veri, şema teyit edilemediği için
       // computed alanlar bunu okuyamazsa packages/couriers listesinden hesaplanmış değere düşer.
@@ -1440,43 +1445,69 @@ export default {
       const courier = this.couriers.find(c => c.id == id);
       return courier ? courier.name : 'Bilinmeyen Kurye';
     },
+    async fetchSelectedCourierRoute() {
+      if (!this.selectedCourierId) {
+        this.activeCourierRoute = null;
+        return;
+      }
+      try {
+        const journeys = await dataService.getJourneys(this.selectedCourierId);
+        // JourneyStatus enum'ında "Active" yok; devam eden sefer "InProgress"tir.
+        const activeJourney = journeys.find(j => j.status === 'InProgress') || journeys[journeys.length - 1];
+        if (activeJourney) {
+          this.activeCourierRoute = await dataService.getTelemetry(activeJourney.id);
+        } else {
+          this.activeCourierRoute = null;
+        }
+      } catch (error) {
+        console.warn("Seçili kuryenin rotası çekilemedi.", error);
+      }
+    },
+    async selectCourier(courierId) {
+      this.selectedCourierId = courierId;
+      // Bir sonraki periyodik polling'i (en fazla 10sn) beklemeden, tıklanan kuryenin
+      // konumunu ve rotasını hemen çekiyoruz — aksi halde harita geç güncelleniyordu.
+      const selected = this.couriers.find(c => c.id === courierId);
+      if (selected && selected.lat && selected.lng) {
+        this.mockAdminPosition = { lat: selected.lat, lng: selected.lng };
+      }
+      // Eski kuryenin rotası ekranda kalıp yeni kuryeninkiyle karıştırılmasın diye
+      // hemen temizleyip, yeni rota gelene kadar bir yükleniyor göstergesi gösteriyoruz.
+      this.activeCourierRoute = null;
+      this.isRouteLoading = true;
+      try {
+        await this.fetchSelectedCourierRoute();
+      } finally {
+        this.isRouteLoading = false;
+      }
+    },
     startPolling() {
       const poll = async () => {
         try {
           const now = new Date();
           this.lastUpdate = now.toLocaleTimeString();
-          
+
           this.couriers = await dataService.getCouriers();
           const selected = this.couriers.find(c => c.id === this.selectedCourierId);
-          
+
           if (selected && selected.lat && selected.lng) {
              this.mockAdminPosition = { lat: selected.lat, lng: selected.lng };
           }
 
-          // Fetch active route for selected courier
-          if (this.selectedCourierId) {
-            const journeys = await dataService.getJourneys(this.selectedCourierId);
-            // JourneyStatus enum'ında "Active" yok; devam eden sefer "InProgress"tir.
-            const activeJourney = journeys.find(j => j.status === 'InProgress') || journeys[journeys.length - 1];
-            if (activeJourney) {
-              const telemetryData = await dataService.getTelemetry(activeJourney.id);
-              this.activeCourierRoute = telemetryData;
-            } else {
-              this.activeCourierRoute = null;
-            }
-          }
+          await this.fetchSelectedCourierRoute();
 
         } catch (error) {
           console.warn("Canlı izleme verisi çekilemedi (Simülasyon devam ediyor).", error);
         }
-        
+
         if (this.activeTab === 'live') {
           this.pollingTimer = setTimeout(poll, 10000); // 10s live polling
         }
       };
-      // Start the first poll after 10 seconds since mounted() already fetched data
+      // Sekmeye girer girmez ilk veriyi hemen çekiyoruz — önceden 10sn bekletiyorduk,
+      // bu yüzden "Canlı Takip"e girince harita birkaç saniye boş/eski kalıyordu.
       if (this.activeTab === 'live') {
-        this.pollingTimer = setTimeout(poll, 10000);
+        poll();
       }
     },
     async searchTourHistory() {
@@ -1484,6 +1515,8 @@ export default {
         toast.error("Lütfen bir barkod girin.");
         return;
       }
+      this.activeCourierRoute = null;
+      this.isRouteLoading = true;
       try {
         const historyData = await dataService.getTourHistoryByBarcode(this.barcodeSearch.trim());
         if (historyData && historyData.length > 0) {
@@ -1495,6 +1528,8 @@ export default {
         }
       } catch (error) {
         toast.error("Rota aranırken bir hata oluştu.");
+      } finally {
+        this.isRouteLoading = false;
       }
     },
     async assignSelectedToCourier() {
@@ -1718,11 +1753,39 @@ export default {
   border: 1px solid #ff5252;
 }
 .map-container {
+  position: relative;
   flex-grow: 1;
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid #333;
   min-height: 400px;
+}
+.map-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 900; /* Leaflet kontrollerinin (zoom vb.) üzerinde ama modallerin altında */
+  background: rgba(17, 17, 17, 0.55);
+  backdrop-filter: blur(2px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.map-loading-spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #4CAF50;
+  border-radius: 50%;
+  animation: map-spin 0.8s linear infinite;
+}
+@keyframes map-spin {
+  to { transform: rotate(360deg); }
 }
 
 /* Logs Area */
