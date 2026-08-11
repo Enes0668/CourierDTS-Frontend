@@ -1508,10 +1508,29 @@ export default {
         priority: this.newPkg.priority,
         pickupLocationId: this.newPkg.pickupLocationId,
         dropoffLocationId: this.newPkg.dropoffLocationId,
-        assignedCourierId // Boşsa Havuza düşer, doluysa doğrudan o kuryeye atanır
+        assignedCourierId
       };
 
-      await dataService.createPackage(payload);
+      const created = await dataService.createPackage(payload);
+
+      // Backend'in POST /packages ucu paketi HER ZAMAN havuza (atanmamış) olarak
+      // oluşturuyor — "assignedCourierId" alanını yaratma anında yok sayıyor. Doğrudan
+      // atama istendiyse, oluşturma sonrası ayrı bir istekle asıl atamayı yapıyoruz.
+      if (assignedCourierId) {
+        const newId = created?.id ?? created?.Id ?? created?.data?.id ?? created?.data?.Id;
+        if (newId) {
+          try {
+            await dataService.assignPackageBulk([newId], assignedCourierId);
+          } catch (e) {
+            console.warn("Paket oluşturuldu ama kuryeye atanamadı, havuzda kaldı.", e);
+            toast.error("Paket oluşturuldu ama kuryeye atanamadı, havuzda kaldı.");
+          }
+        } else {
+          console.warn("Oluşturulan paketin ID'si yanıttan okunamadı, otomatik atama yapılamadı.", created);
+          toast.error("Paket oluşturuldu ama ID alınamadığı için kuryeye atanamadı, havuzda kaldı.");
+        }
+      }
+
       await this.fetchData();
 
       this.newPkg = {
