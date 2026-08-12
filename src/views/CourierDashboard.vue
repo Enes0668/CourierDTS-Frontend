@@ -477,23 +477,12 @@ export default {
         const endLng = this.selectedNextStop.longitude || this.selectedNextStop.lng;
         const endLat = this.selectedNextStop.latitude || this.selectedNextStop.lat;
 
-        if (!this.currentJourneyId) {
-          // Yerel currentJourneyId boş olabilir (sayfa yenilendi, yeniden giriş yapıldı vb.)
-          // ama backend'de kuryenin ÖNCEKİ bir seferi hâlâ "InProgress" kalmış olabilir
-          // (örn. "Seferi Bitir" hiç kullanılmadıysa). Önce bunu kontrol ediyoruz —
-          // aksi halde aşağıda /journeys/start çağrısı "Aktif Sefer Kontrolü" kuralına
-          // takılıp reddedilir.
-          try {
-            const journeys = await dataService.getJourneys(courierId);
-            const active = journeys.find(j => (j.status ?? j.Status) === 'InProgress');
-            if (active) {
-              this.currentJourneyId = active.id ?? active.Id;
-              console.log('[Sefer] Kapatılmamış aktif bir sefer bulundu, ona devam ediliyor:', this.currentJourneyId);
-            }
-          } catch (e) {
-            console.warn("Mevcut aktif sefer kontrol edilemedi.", e);
-          }
-        }
+        // NOT: Burada önceden "zaten aktif bir seferim var mı" diye GET /journeys'e
+        // soruyorduk, ama bu uç API yetki listesinde sadece "Admin" — kurye bunu
+        // çağırınca backend 401 dönüyor ve api/index.js'deki global interceptor, bu
+        // fonksiyonun kendi try/catch'i devreye girmeden ÖNCE kullanıcıyı otomatik
+        // login'e atıyordu ("giriş yapmanız gerekiyor" hatası buradan geliyordu).
+        // Kurye tarafında bu kontrolü yapabileceğimiz bir uç olmadığı için kaldırıldı.
 
         if (this.currentJourneyId) {
           // Aynı seferin (Sefer/Tour) içinde yeni bir durağa geçiyoruz — /journeys/start'ı
