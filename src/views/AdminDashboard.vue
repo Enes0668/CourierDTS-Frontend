@@ -138,24 +138,40 @@
         <div class="map-header" @click="isMapVisibleOnMobile = !isMapVisibleOnMobile">
           <div class="map-header-title">
             <h3>📍 Canlı Kurye İzleme & Rota Arama</h3>
-            <span class="polling-badge">🔴 Canlı (Son Güncelleme: {{ lastUpdate }})</span>
+            <span v-if="!selectedRouteDate" class="polling-badge">🔴 Canlı (Son Güncelleme: {{ lastUpdate }})</span>
+            <span v-else class="polling-badge history-badge">📅 {{ selectedRouteDate }} tarihli geçmiş rota</span>
           </div>
-          
+
           <div class="search-bar" @click.stop>
             <input type="text" v-model="barcodeSearch" placeholder="Barkod ile ara (Geçmiş Rota)" @keyup.enter="searchTourHistory" />
             <button @click="searchTourHistory">Ara</button>
           </div>
           <span class="mobile-toggle-icon">{{ isMapVisibleOnMobile ? '🔽' : '▶️' }}</span>
         </div>
-        
+
         <div class="map-collapsible-content">
+          <div class="date-route-picker" @click.stop>
+            <label for="route-date-input">📅 Tarihe Göre Rota Göster:</label>
+            <input
+              id="route-date-input"
+              type="date"
+              v-model="selectedRouteDate"
+              :max="todayDateStr"
+              :disabled="!selectedCourierId"
+              title="Soldan bir kurye seçip, o kuryenin belirttiğiniz tarihte gittiği rotayı görün"
+              @change="onRouteDateChange"
+            />
+            <button v-if="selectedRouteDate" @click="clearRouteDate" class="assign-btn" style="width: auto; padding: 8px 16px; margin: 0;">🔴 Canlıya Dön</button>
+            <span v-if="!selectedCourierId" class="hint-text" style="margin: 0;">(önce soldan bir kurye seçin)</span>
+          </div>
           <div class="route-legend">
             <span><span class="legend-dot" style="background:#ff5722;"></span> Normal rota</span>
             <span><span class="legend-dot" style="background:#9c27b0;"></span> Devredilmiş paket (kurye değişti)</span>
+            <span><span class="legend-dot" style="background:#2196F3;"></span> Geçmiş tarih rotası</span>
           </div>
           <div class="map-container">
             <!-- Harita Bileşeni -->
-            <MapView :courierPosition="mockAdminPosition" :telemetryRoute="activeCourierRoute" :telemetryRouteColor="activeRouteColor" :showLivePath="false" :stops="courierStops" />
+            <MapView :courierPosition="selectedRouteDate ? null : mockAdminPosition" :telemetryRoute="activeCourierRoute" :telemetryRouteColor="activeRouteColor" :showLivePath="false" :stops="courierStops" />
             <div v-if="isRouteLoading" class="map-loading-overlay">
               <div class="map-loading-spinner"></div>
               <span>Rota yükleniyor...</span>
@@ -442,13 +458,6 @@
               </div>
             </div>
             <div class="pool-actions">
-              <button
-                v-if="(courierOnHandCounts[c.id] || 0) > 0"
-                @click="openTransferModal(c.id)"
-                class="icon-btn"
-                style="filter: none;"
-                title="Kaza/Acil Durum: Paketlerini Başka Kuryeye Devret"
-              >🔁</button>
               <button @click="openEditCourierModal(c)" class="icon-btn edit-btn" title="Kuryeyi Düzenle">✏️</button>
               <button @click="removeCourier(c.id)" class="icon-btn delete-btn" title="Kuryeyi Sil">🗑️</button>
             </div>
@@ -560,33 +569,6 @@
             <button type="submit" class="primary-btn">Kaydet</button>
           </div>
         </form>
-      </div>
-    </div>
-
-    <!-- KURYE DEVRİ MODAL (Kaza/Acil Durum) -->
-    <div v-if="showTransferModal" class="modal-overlay" @click.self="showTransferModal = false">
-      <div class="modal-content">
-        <h3>🔁 Kurye Devri (Kaza/Acil Durum)</h3>
-        <p class="hint-text" style="margin-top: -5px;">
-          <strong>{{ getCourierName(transferModalFromCourierId) }}</strong> kuryesinin üzerindeki
-          <strong>{{ courierOnHandCounts[transferModalFromCourierId] || 0 }} paket</strong>,
-          seçtiğiniz kuryeye devredilip kaldığı yerden ona atanacak.
-        </p>
-        <div class="form-group" style="width: 100%; margin-top: 15px;">
-          <label>Devredilecek Kurye</label>
-          <select v-model="transferModalToCourierId">
-            <option value="" disabled>Seçiniz...</option>
-            <option
-              v-for="c in couriers.filter(c => c.id !== transferModalFromCourierId)"
-              :key="'transfer-modal-' + c.id"
-              :value="c.id"
-            >🛵 {{ c.name }}</option>
-          </select>
-        </div>
-        <div class="modal-actions" style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px; width: 100%">
-          <button type="button" class="logout-btn-top" @click="showTransferModal = false">İptal</button>
-          <button type="button" class="primary-btn" :disabled="!transferModalToCourierId" @click="confirmTransferModal">Devret</button>
-        </div>
       </div>
     </div>
 
@@ -745,6 +727,9 @@ export default {
       poolPickupFilter: '',
       poolDropoffFilter: '',
       barcodeSearch: '',
+      // Canlı Takip'te "hangi tarihte hangi rotayı gitmiş" sorusu için: boşsa canlı/bugünkü
+      // görünüm, doluysa seçilen kuryenin o güne ait seferinin (journey) rotası gösterilir.
+      selectedRouteDate: '',
       newPkg: {
         barcode: '',
         description: '',
@@ -769,10 +754,6 @@ export default {
 
       // Kurye Devri (Nakil)
       transferToCourierId: '',
-      // Kuryeler sekmesinden (kaza/acil durum) yapılan devir için ayrı modal state'i.
-      showTransferModal: false,
-      transferModalFromCourierId: null,
-      transferModalToCourierId: '',
       // Devredilmiş paketlerin barkodları — barkod aramada bu paketlerin rotası farklı
       // renkte (mor) çizilsin diye tarayıcıda kalıcı olarak saklanıyor (sayfa yenilense
       // de kaybolmasın). Backend'de bunu ayırt eden bir alan olmadığından istemci
@@ -926,6 +907,10 @@ export default {
              this.newPkg.pickupLocationId &&
              this.newPkg.dropoffLocationId &&
              this.newPkg.priority > 0;
+    },
+    todayDateStr() {
+      // Tarih seçicide gelecek bir tarih seçilemesin diye üst sınır.
+      return new Date().toISOString().slice(0, 10);
     },
     newPkgSummary() {
       if (!this.newPkg.pickupLocationId || !this.newPkg.dropoffLocationId) return '';
@@ -1161,16 +1146,6 @@ export default {
       if (!this.transferToCourierId) return;
       const ok = await this.transferCourierPackagesTo(this.selectedCourierId, this.transferToCourierId);
       if (ok) this.transferToCourierId = '';
-    },
-    openTransferModal(courierId) {
-      this.transferModalFromCourierId = courierId;
-      this.transferModalToCourierId = '';
-      this.showTransferModal = true;
-    },
-    async confirmTransferModal() {
-      if (!this.transferModalToCourierId) return;
-      const ok = await this.transferCourierPackagesTo(this.transferModalFromCourierId, this.transferModalToCourierId);
-      if (ok) this.showTransferModal = false;
     },
     async submitNewCourier() {
       try {
@@ -1553,7 +1528,16 @@ export default {
         // JourneyStatus enum'ında "Active" yok; devam eden sefer "InProgress"tir.
         const activeJourney = journeys.find(j => j.status === 'InProgress') || journeys[journeys.length - 1];
         if (activeJourney) {
-          this.activeCourierRoute = await dataService.getTelemetry(activeJourney.id);
+          const allPoints = await dataService.getTelemetry(activeJourney.id);
+          // Kurye "Seferi Bitir"i hiç kullanmadıysa, journey günler boyu InProgress
+          // kalabiliyor — bu durumda "canlı" rota o seferin TÜM geçmişini değil,
+          // sadece BUGÜNKÜ noktalarını göstermeli (aksi halde dünkü/eski hareket
+          // bugün hiç sefer yapılmamışken bile "canlı rota" gibi görünür).
+          const today = this.todayDateStr;
+          this.activeCourierRoute = (allPoints || []).filter(p => {
+            const t = p.timestamp;
+            return t && String(t).slice(0, 10) === today;
+          });
         } else {
           this.activeCourierRoute = null;
         }
@@ -1567,7 +1551,12 @@ export default {
      * notlar — tek journey/gün + replan), "kuryenin küçük journey'i nerede bittiği" bilgisini
      * ancak bu şekilde, gerçek işlem kayıtlarından elde edebiliyoruz.
      */
-    async fetchCourierStops(courierId) {
+    /**
+     * @param {number|string} courierId
+     * @param {string} [dateStr] - "YYYY-MM-DD" verilirse sadece o güne ait duraklar döner
+     *   (Canlı Takip'teki tarih seçici için).
+     */
+    async fetchCourierStops(courierId, dateStr = null) {
       if (!courierId) {
         this.courierStops = [];
         return;
@@ -1579,7 +1568,12 @@ export default {
         // kalıp kaydı eleme).
         const relevant = histories.filter(h => {
           const hCourierId = h.courierId ?? h.CourierId;
-          return hCourierId == null || hCourierId == courierId;
+          if (hCourierId != null && hCourierId != courierId) return false;
+          if (dateStr) {
+            const actionTime = h.actionTime ?? h.ActionTime;
+            if (!actionTime || String(actionTime).slice(0, 10) !== dateStr) return false;
+          }
+          return true;
         });
 
         const groups = new Map();
@@ -1620,6 +1614,70 @@ export default {
         this.courierStops = [];
       }
     },
+    /**
+     * Seçili kuryenin belirli bir GÜNE ait seferini (journey) bulup rotasını çizer.
+     * Mimarimizde bir kuryenin bir günü = tek journey olduğu için (bkz. sohbetteki
+     * mimari notlar), journeys listesindeki StartTime'ın tarihini eşleştirmek yeterli.
+     */
+    async fetchRouteForDate(courierId, dateStr) {
+      if (!courierId || !dateStr) return;
+      this.activeCourierRoute = null;
+      this.courierStops = [];
+      this.isRouteLoading = true;
+      try {
+        const journeys = await dataService.getJourneys(courierId);
+        const targetJourney = journeys.find(j => {
+          const start = j.startTime ?? j.StartTime;
+          return start && String(start).slice(0, 10) === dateStr;
+        });
+
+        if (!targetJourney) {
+          toast.error(`${dateStr} tarihinde bu kuryeye ait bir sefer bulunamadı.`);
+          return;
+        }
+
+        const journeyId = targetJourney.id ?? targetJourney.Id;
+        this.activeCourierRoute = await dataService.getTelemetry(journeyId);
+        this.activeRouteColor = '#2196F3'; // Geçmiş tarih rotası: mavi
+        await this.fetchCourierStops(courierId, dateStr);
+        toast.success(`${dateStr} tarihli rota haritaya çizildi.`);
+      } catch (error) {
+        console.warn("Tarihe ait rota çekilemedi.", error);
+        toast.error("Tarihe ait rota alınırken bir hata oluştu.");
+      } finally {
+        this.isRouteLoading = false;
+      }
+    },
+    async onRouteDateChange() {
+      if (!this.selectedCourierId) {
+        toast.error("Önce soldaki listeden bir kurye seçin.");
+        this.selectedRouteDate = '';
+        return;
+      }
+      if (!this.selectedRouteDate) {
+        await this.clearRouteDate();
+        return;
+      }
+      await this.fetchRouteForDate(this.selectedCourierId, this.selectedRouteDate);
+    },
+    async clearRouteDate() {
+      this.selectedRouteDate = '';
+      // Eski (tarihli) rota, yeni canlı veri gelene kadar ekranda kalıp sadece rengi
+      // turuncuya dönerek "canlı rota buymuş gibi" yanlış bir izlenim vermesin diye
+      // hemen temizliyoruz — tıpkı selectCourier()'daki gibi.
+      this.activeCourierRoute = null;
+      this.courierStops = [];
+      this.activeRouteColor = '#ff5722';
+      this.isRouteLoading = true;
+      try {
+        await Promise.all([
+          this.fetchSelectedCourierRoute(),
+          this.fetchCourierStops(this.selectedCourierId, this.todayDateStr)
+        ]);
+      } finally {
+        this.isRouteLoading = false;
+      }
+    },
     async selectCourier(courierId) {
       this.selectedCourierId = courierId;
       // Bir sonraki periyodik polling'i (en fazla 10sn) beklemeden, tıklanan kuryenin
@@ -1635,11 +1693,14 @@ export default {
       // Bir önceki barkod aramasından kalmış olabilecek mor rengi sıfırlıyoruz —
       // kuryenin kendi canlı rotası her zaman standart turuncu ile gösterilir.
       this.activeRouteColor = '#ff5722';
+      // Başka bir kurye seçildiğinde, önceki kuryenin tarih filtresi kafa karıştırmasın
+      // diye canlı görünüme dönüyoruz.
+      this.selectedRouteDate = '';
       this.isRouteLoading = true;
       try {
         await Promise.all([
           this.fetchSelectedCourierRoute(),
-          this.fetchCourierStops(courierId)
+          this.fetchCourierStops(courierId, this.todayDateStr)
         ]);
       } finally {
         this.isRouteLoading = false;
@@ -1658,8 +1719,12 @@ export default {
              this.mockAdminPosition = { lat: selected.lat, lng: selected.lng };
           }
 
-          await this.fetchSelectedCourierRoute();
-          await this.fetchCourierStops(this.selectedCourierId);
+          // Bir geçmiş tarih seçiliyken periyodik polling, ekrandaki geçmiş rotayı
+          // "canlı" veriyle ezmesin — sadece canlı/bugünkü görünümde tazeleniyor.
+          if (!this.selectedRouteDate) {
+            await this.fetchSelectedCourierRoute();
+            await this.fetchCourierStops(this.selectedCourierId, this.todayDateStr);
+          }
 
         } catch (error) {
           console.warn("Canlı izleme verisi çekilemedi (Simülasyon devam ediyor).", error);
@@ -1681,6 +1746,9 @@ export default {
         toast.error("Lütfen bir barkod girin.");
         return;
       }
+      // Barkod araması ile tarih filtresi aynı harita alanını paylaşıyor —
+      // karışmasın diye tarih seçiciyi temizliyoruz.
+      this.selectedRouteDate = '';
       this.activeCourierRoute = null;
       this.isRouteLoading = true;
       try {
@@ -1923,6 +1991,40 @@ export default {
   font-size: 12px;
   font-weight: bold;
   border: 1px solid #ff5252;
+}
+.history-badge {
+  background: #0d2140;
+  color: #a5c9ff;
+  border: 1px solid #2196F3;
+}
+.date-route-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: #1a2740;
+  border: 1px solid #2196F3;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+.date-route-picker label {
+  font-size: 13px;
+  font-weight: bold;
+  color: #a5c9ff;
+  white-space: nowrap;
+}
+.date-route-picker input[type="date"] {
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #444;
+  background: #222;
+  color: white;
+  color-scheme: dark;
+}
+.date-route-picker input[type="date"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .route-legend {
   display: flex;

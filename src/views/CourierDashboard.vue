@@ -477,6 +477,24 @@ export default {
         const endLng = this.selectedNextStop.longitude || this.selectedNextStop.lng;
         const endLat = this.selectedNextStop.latitude || this.selectedNextStop.lat;
 
+        if (!this.currentJourneyId) {
+          // Yerel currentJourneyId boş olabilir (sayfa yenilendi, yeniden giriş yapıldı vb.)
+          // ama backend'de kuryenin ÖNCEKİ bir seferi hâlâ "InProgress" kalmış olabilir
+          // (örn. "Seferi Bitir" hiç kullanılmadıysa). Önce bunu kontrol ediyoruz —
+          // aksi halde aşağıda /journeys/start çağrısı "Aktif Sefer Kontrolü" kuralına
+          // takılıp reddedilir.
+          try {
+            const journeys = await dataService.getJourneys(courierId);
+            const active = journeys.find(j => (j.status ?? j.Status) === 'InProgress');
+            if (active) {
+              this.currentJourneyId = active.id ?? active.Id;
+              console.log('[Sefer] Kapatılmamış aktif bir sefer bulundu, ona devam ediliyor:', this.currentJourneyId);
+            }
+          } catch (e) {
+            console.warn("Mevcut aktif sefer kontrol edilemedi.", e);
+          }
+        }
+
         if (this.currentJourneyId) {
           // Aynı seferin (Sefer/Tour) içinde yeni bir durağa geçiyoruz — /journeys/start'ı
           // TEKRAR çağırmıyoruz (bkz. "Aktif Sefer Kontrolü" notu), sadece hedefi/rotayı
@@ -504,8 +522,20 @@ export default {
             const resp = await dataService.startJourney(payload);
             this.currentJourneyId = resp.journeyId;
           } catch (e) {
-            console.warn("API ulaşılamadı, mock JourneyId üretiliyor.");
-            this.currentJourneyId = Math.floor(Math.random() * 1000);
+            // ARTIK SAHTE (rastgele) bir journeyId ÜRETMİYORUZ — bu, GPS'in ve paket
+            // senkronlarının backend'in tanımadığı bir ID'ye gidip sessizce reddedilmesine
+            // (tam da yaşadığınız "senkronize edilemedi" hatasına) yol açıyordu. Bunun
+            // yerine gerçek hatayı gösterip akışı burada durduruyoruz.
+            console.error("Sefer başlatılamadı:", e);
+            let msg = "Sefer başlatılamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.";
+            if (e.response && e.response.data) {
+              if (typeof e.response.data === 'string') msg = e.response.data;
+              else if (e.response.data.message) msg = e.response.data.message;
+              else if (e.response.data.title) msg = e.response.data.title;
+            }
+            toast.error(msg);
+            this.isDeliveryStarted = false;
+            return;
           }
         }
 
