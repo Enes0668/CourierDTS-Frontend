@@ -665,6 +665,25 @@ export default {
       this.closeModals();
     },
     endJourneyAtStop() {
+      // Bu durakta henüz işlem yapılmamış paket(ler) var mı kontrol edelim
+      const pendingPickupCount = this.packagesToPickup.length;
+      const pendingDropoffCount = this.packagesToDropoff.length;
+
+      if (pendingPickupCount > 0 || pendingDropoffCount > 0) {
+        let warningMessage = "Bu durakta henüz işlem yapılmamış paketler bulunuyor:\n";
+        if (pendingPickupCount > 0) {
+          warningMessage += `- Alınması gereken ${pendingPickupCount} adet paket var.\n`;
+        }
+        if (pendingDropoffCount > 0) {
+          warningMessage += `- Teslim edilmesi gereken ${pendingDropoffCount} adet paket var.\n`;
+        }
+        warningMessage += "\nİşlemleri tamamlamadan bu durağı bitirmek istediğinize emin misiniz?";
+
+        if (!confirm(warningMessage)) {
+          return; // İşlemi iptal et
+        }
+      }
+
       // Bu buton SADECE bu duraktaki işlemleri bitirip yeni bir durak seçmek içindir —
       // günün TAMAMEN bitirilmesi (backend'in "teslim edilmemiş materyal varsa reddeder"
       // kuralına tabi PUT /journeys/{id}/complete çağrısı) burada YAPILMAZ. Aksi halde
