@@ -38,7 +38,7 @@
         
         <div style="display:flex; gap:10px;">
           <button @click="closeModals" class="close-btn" style="flex:1;">İptal</button>
-          <button @click="processSelectedPickups" class="action-btn pickup" style="flex:2;" :disabled="selectedPickupPackages.length === 0">Seçilenleri Teslim Al ({{ selectedPickupPackages.length }})</button>
+          <button @click="processSelectedPickups" class="action-btn pickup" style="flex:2;" :disabled="selectedPickupPackages.length === 0 || isSubmittingAction">Seçilenleri Teslim Al ({{ selectedPickupPackages.length }})</button>
         </div>
       </div>
     </div>
@@ -64,7 +64,7 @@
         
         <div style="display:flex; gap:10px;">
           <button @click="closeModals" class="close-btn" style="flex:1;">İptal</button>
-          <button @click="processSelectedDropoffs" class="action-btn dropoff" style="flex:2;" :disabled="selectedDropoffPackages.length === 0">Seçilenleri Teslim Et ({{ selectedDropoffPackages.length }})</button>
+          <button @click="processSelectedDropoffs" class="action-btn dropoff" style="flex:2;" :disabled="selectedDropoffPackages.length === 0 || isSubmittingAction">Seçilenleri Teslim Et ({{ selectedDropoffPackages.length }})</button>
         </div>
       </div>
     </div>
@@ -219,7 +219,12 @@ export default {
       currentJourneyId: null,
       vehicles: [],
       activeVehicleId: '',
-      gpsWatcherId: null
+      gpsWatcherId: null,
+      // Alım/teslim butonlarında çift tıklama (veya yavaş ağda üst üste tıklama) koruması.
+      // Bu bayrak true iken aynı işlem TEKRAR tetiklenmez — aksi halde processSelectedPickups/
+      // Dropoffs eşzamanlı iki kere çalışıp aynı paket için backend'e iki ayrı PickedUp/Delivered
+      // kaydı (birkaç yüz ms arayla) düşürebiliyordu.
+      isSubmittingAction: false
     }
   },
   computed: {
@@ -638,68 +643,83 @@ export default {
       }
     },
     async processSelectedPickups() {
-      const courierId = localStorage.getItem('courier_id') || 5;
-      const lat = this.mockPosition ? this.mockPosition.lat : 0;
-      const lng = this.mockPosition ? this.mockPosition.lng : 0;
-      const arrivalLocationId = this.selectedNextStop.id;
+      // Aynı işlem zaten sürüyorsa (kullanıcı butona ikinci kez bastı) tekrar başlatma —
+      // aksi halde aynı paket için backend'e iki ayrı PickedUp kaydı gidebiliyordu.
+      if (this.isSubmittingAction) return;
+      this.isSubmittingAction = true;
+      try {
+        const courierId = localStorage.getItem('courier_id') || 5;
+        const lat = this.mockPosition ? this.mockPosition.lat : 0;
+        const lng = this.mockPosition ? this.mockPosition.lng : 0;
+        const arrivalLocationId = this.selectedNextStop.id;
 
-      const failedBarcodes = [];
-      for (const pkgId of this.selectedPickupPackages) {
-        const pkg = this.packages.find(p => p.id === pkgId);
-        if (!pkg) continue;
-        const success = await actionQueue.queueAction({
-          packageId: pkg.id,
-          locationId: arrivalLocationId,
-          latitude: lat,
-          longitude: lng,
-          actionType: 'PickedUp',
-          actionTime: new Date().toISOString(),
-          notes: this.actionNotes
-        }, courierId, this.currentJourneyId);
+        const failedBarcodes = [];
+        for (const pkgId of this.selectedPickupPackages) {
+          const pkg = this.packages.find(p => p.id === pkgId);
+          if (!pkg) continue;
+          const success = await actionQueue.queueAction({
+            packageId: pkg.id,
+            locationId: arrivalLocationId,
+            latitude: lat,
+            longitude: lng,
+            actionType: 'PickedUp',
+            actionTime: new Date().toISOString(),
+            notes: this.actionNotes
+          }, courierId, this.currentJourneyId);
 
-        if (success) {
-          pkg.status = 'PickedUp';
-        } else {
-          failedBarcodes.push(pkg.barcode || pkg.id);
+          if (success) {
+            pkg.status = 'PickedUp';
+          } else {
+            failedBarcodes.push(pkg.barcode || pkg.id);
+          }
         }
-      }
 
-      if (failedBarcodes.length > 0) {
-        toast.error(`Şu paketler senkronize edilemedi, bağlantı gelince tekrar denenecek: ${failedBarcodes.join(', ')}`);
+        if (failedBarcodes.length > 0) {
+          toast.error(`Şu paketler senkronize edilemedi, bağlantı gelince tekrar denenecek: ${failedBarcodes.join(', ')}`);
+        }
+        this.closeModals();
+      } finally {
+        this.isSubmittingAction = false;
       }
-      this.closeModals();
     },
     async processSelectedDropoffs() {
-      const courierId = localStorage.getItem('courier_id') || 5;
-      const lat = this.mockPosition ? this.mockPosition.lat : 0;
-      const lng = this.mockPosition ? this.mockPosition.lng : 0;
-      const arrivalLocationId = this.selectedNextStop.id;
+      // bkz. processSelectedPickups — aynı çift-tıklama koruması.
+      if (this.isSubmittingAction) return;
+      this.isSubmittingAction = true;
+      try {
+        const courierId = localStorage.getItem('courier_id') || 5;
+        const lat = this.mockPosition ? this.mockPosition.lat : 0;
+        const lng = this.mockPosition ? this.mockPosition.lng : 0;
+        const arrivalLocationId = this.selectedNextStop.id;
 
-      const failedBarcodes = [];
-      for (const pkgId of this.selectedDropoffPackages) {
-        const pkg = this.packages.find(p => p.id === pkgId);
-        if (!pkg) continue;
-        const success = await actionQueue.queueAction({
-          packageId: pkg.id,
-          locationId: arrivalLocationId,
-          latitude: lat,
-          longitude: lng,
-          actionType: 'Delivered',
-          actionTime: new Date().toISOString(),
-          notes: this.actionNotes
-        }, courierId, this.currentJourneyId);
+        const failedBarcodes = [];
+        for (const pkgId of this.selectedDropoffPackages) {
+          const pkg = this.packages.find(p => p.id === pkgId);
+          if (!pkg) continue;
+          const success = await actionQueue.queueAction({
+            packageId: pkg.id,
+            locationId: arrivalLocationId,
+            latitude: lat,
+            longitude: lng,
+            actionType: 'Delivered',
+            actionTime: new Date().toISOString(),
+            notes: this.actionNotes
+          }, courierId, this.currentJourneyId);
 
-        if (success) {
-          pkg.status = 'Delivered';
-        } else {
-          failedBarcodes.push(pkg.barcode || pkg.id);
+          if (success) {
+            pkg.status = 'Delivered';
+          } else {
+            failedBarcodes.push(pkg.barcode || pkg.id);
+          }
         }
-      }
 
-      if (failedBarcodes.length > 0) {
-        toast.error(`Şu paketler senkronize edilemedi, bağlantı gelince tekrar denenecek: ${failedBarcodes.join(', ')}`);
+        if (failedBarcodes.length > 0) {
+          toast.error(`Şu paketler senkronize edilemedi, bağlantı gelince tekrar denenecek: ${failedBarcodes.join(', ')}`);
+        }
+        this.closeModals();
+      } finally {
+        this.isSubmittingAction = false;
       }
-      this.closeModals();
     },
     endJourneyAtStop() {
       // Bu durakta henüz işlem yapılmamış paket(ler) var mı kontrol edelim
