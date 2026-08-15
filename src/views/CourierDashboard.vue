@@ -528,6 +528,15 @@ export default {
           }
         }
 
+        // Kuryenin üzerinde zaten taşıdığı paketler (yeni alınanlar dahil) için, bu durağı
+        // FİİLEN TERK ETTİĞİ anı "InTransit" actionType'ıyla ayrıca logluyoruz. PickedUp
+        // zaman damgası sadece "elime aldım" anını gösteriyor; kurye aynı durakta başka
+        // paket toplarken/işlem yaparken beklerse PickedUp→Delivered arası süre suni
+        // şekilde uzuyor ve bu, kuryenin aleyhine bir performans metriği gibi okunabilir.
+        // InTransit ile "yola çıktım" anı ayrı kaydedilince gerçek taşıma süresi bu iki
+        // kayıt (son InTransit → Delivered) arasından hesaplanabiliyor.
+        await this.logDepartureInTransit(courierId, startLat, startLng);
+
         telemetry.setContext(courierId, this.currentJourneyId);
         telemetry.startDelivery(this.currentLocation.name, this.selectedNextStop.name, plannedDistanceMeters, coordinates);
 
@@ -561,6 +570,34 @@ export default {
       this.isDelivered = true;
       telemetry.courierArrived();
       toast.success("Hedefe ulaşıldı!");
+    },
+    /**
+     * bkz. startJourney() içindeki not: elimizdeki her paket için, bu durağı terk
+     * ettiğimiz anı ayrı bir "InTransit" kaydı olarak backend'e (PackageHistories)
+     * yazar. Paket birden çok durak arasında taşınıyorsa (aynı sefer içinde ara
+     * duraklara uğranıyorsa) her ayrılışta yeni bir InTransit kaydı düşer — raporlama
+     * tarafı "gerçek taşıma süresi" için PickedUp değil, SON InTransit kaydını baz
+     * almalı.
+     */
+    async logDepartureInTransit(courierId, lat, lng) {
+      for (const pkg of this.myPackages) {
+        const success = await actionQueue.queueAction({
+          packageId: pkg.id,
+          locationId: this.currentLocation.id,
+          latitude: lat,
+          longitude: lng,
+          actionType: 'InTransit',
+          actionTime: new Date().toISOString(),
+          notes: ''
+        }, courierId, this.currentJourneyId);
+
+        if (success) {
+          pkg.status = 'InTransit';
+        }
+        // Başarısız olursa actionQueue zaten kuyruğa alıp internet gelince gönderiyor;
+        // burada ayrıca kullanıcıya hata göstermiyoruz (pickup/dropoff akışlarının
+        // aksine bu sessiz, arka plan bir kayıt — akışı kesmemeli).
+      }
     },
     closeModals() {
       this.showPickupModal = false;
