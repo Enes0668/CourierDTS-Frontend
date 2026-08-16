@@ -224,7 +224,15 @@ export default {
       // Bu bayrak true iken aynı işlem TEKRAR tetiklenmez — aksi halde processSelectedPickups/
       // Dropoffs eşzamanlı iki kere çalışıp aynı paket için backend'e iki ayrı PickedUp/Delivered
       // kaydı (birkaç yüz ms arayla) düşürebiliyordu.
-      isSubmittingAction: false
+      isSubmittingAction: false,
+      // Kuryenin bu oturumda /courier sayfasını açtığında GPS'ten gelen İLK ham konum —
+      // bir daha üzerine yazılmıyor (mockPosition'ın aksine, o her GPS güncellemesinde
+      // değişir). StartLocId'nin sadece bilinen bir Location'a (5km eşiği) bağlı kalması
+      // yeterli değil — kurye evinde/bilinen hiçbir noktaya yakın olmayan bir yerde de
+      // olabilir. Bu ham koordinat, backend startLatitude/startLongitude alanlarını
+      // destekleyince /journeys/start'a StartLocId'nin yanında (onun yerine değil)
+      // gönderilecek — bkz. startJourney().
+      dayStartPosition: null
     }
   },
   computed: {
@@ -391,6 +399,14 @@ export default {
           const lng = position.coords.longitude;
           this.mockPosition = { lat, lng };
 
+          // Sayfa açıldıktan sonra GPS'ten (gerçek donanım ya da simülasyon fark etmez,
+          // gpsProvider ikisini de aynı callback'e veriyor) gelen İLK konumu, bilinen bir
+          // Location'a yakın olsun olmasın, olduğu gibi donduruyoruz. mockPosition kurye
+          // hareket ettikçe sürekli değişir; dayStartPosition bir daha değişmez.
+          if (!this.dayStartPosition) {
+            this.dayStartPosition = { lat, lng, capturedAt: new Date().toISOString() };
+          }
+
           if (!this.currentLocation && !this.isDeliveryStarted) {
             this.autoDetectInitialLocation(lat, lng);
           }
@@ -459,8 +475,16 @@ export default {
       }
     },
     async startJourney() {
-      if (!this.currentLocation || !this.selectedNextStop) {
-        toast.error("Yolculuk başlatılamadı: Konum bilgisi eksik.");
+      // Backend artık StartJourneyRequest.startLocationId'yi nullable kabul ediyor —
+      // yani kurye bilinen hiçbir Location'a (5km eşiği) yakın olmasa bile (örn. evinde)
+      // günü başlatabilmeli. currentLocation burada artık ZORUNLU değil; bilinmiyorsa
+      // aşağıda dayStartPosition'daki ham GPS koordinatına düşüyoruz.
+      if (!this.selectedNextStop) {
+        toast.error("Yolculuk başlatılamadı: Gidilecek durak seçilmedi.");
+        return;
+      }
+      if (!this.currentLocation && !this.dayStartPosition) {
+        toast.error("Yolculuk başlatılamadı: Konum bilgisi eksik (GPS henüz gelmedi).");
         return;
       }
 
@@ -477,8 +501,14 @@ export default {
         // çiziliyor. plannedPath/plannedDistanceMeters bu yüzden boş gönderiliyor.
         const coordinates = [];
         const plannedDistanceMeters = 0;
-        const startLng = this.currentLocation.longitude || this.currentLocation.lng;
-        const startLat = this.currentLocation.latitude || this.currentLocation.lat;
+        // currentLocation (bilinen Location) varsa onu kullan; yoksa (kurye bilinen hiçbir
+        // noktaya yakın değilse) dayStartPosition'daki ham GPS koordinatına düş.
+        const startLng = this.currentLocation
+          ? (this.currentLocation.longitude || this.currentLocation.lng)
+          : this.dayStartPosition.lng;
+        const startLat = this.currentLocation
+          ? (this.currentLocation.latitude || this.currentLocation.lat)
+          : this.dayStartPosition.lat;
         const endLng = this.selectedNextStop.longitude || this.selectedNextStop.lng;
         const endLat = this.selectedNextStop.latitude || this.selectedNextStop.lat;
 
@@ -508,6 +538,13 @@ export default {
             const payload = {
               courierId: parseInt(courierId),
               startLocationId: this.currentLocation ? this.currentLocation.id : null,
+              // Backend'e StartLocId'nin yanında ham konumu da gönderiyoruz — kurye bilinen
+              // hiçbir Location'a (5km eşiği) yakın değilse startLocationId null kalır, ama
+              // gerçek başlangıç noktası yine de kaybolmaz. Backend startLatitude/
+              // startLongitude alanlarını henüz desteklemiyorsa bu alanlar zararsızca
+              // yok sayılır (bkz. backend'e iletilen not).
+              startLatitude: this.dayStartPosition ? this.dayStartPosition.lat : null,
+              startLongitude: this.dayStartPosition ? this.dayStartPosition.lng : null,
               endLocationId: this.selectedNextStop.id,
               materialIds: this.myPackages.map(p => p.id || p.Id).filter(id => id != null),
               plannedPath: coordinates,
@@ -543,7 +580,7 @@ export default {
         await this.logDepartureInTransit(courierId, startLat, startLng);
 
         telemetry.setContext(courierId, this.currentJourneyId);
-        telemetry.startDelivery(this.currentLocation.name, this.selectedNextStop.name, plannedDistanceMeters, coordinates);
+        telemetry.startDelivery(this.currentLocation ? this.currentLocation.name : 'Bilinmeyen Başlangıç', this.selectedNextStop.name, plannedDistanceMeters, coordinates);
 
         // Haritada sadece başlangıç/hedef işaretçileri gösterilecek; aradaki gerçek
         // güzergah önceden çizilmiyor, GPS ile canlı oluşuyor (bkz. MapView.drawActiveRoute).
@@ -560,11 +597,8 @@ export default {
           },
           coordinates: coordinates
         };
-        // Kuryeyi başlangıç noktasına yerleştir
-        this.mockPosition = {
-          lat: this.currentLocation.latitude || this.currentLocation.lat,
-          lng: this.currentLocation.longitude || this.currentLocation.lng
-        };
+        // Kuryeyi başlangıç noktasına yerleştir (bilinen Location yoksa ham GPS'e düş)
+        this.mockPosition = { lat: startLat, lng: startLng };
 
       } catch (error) {
         console.error("API Hatası:", error);
@@ -585,6 +619,14 @@ export default {
      * almalı.
      */
     async logDepartureInTransit(courierId, lat, lng) {
+      // SyncActionItem.locationId backend'de zorunlu (nullable değil) — bilinen bir
+      // Location'ımız yoksa (kurye evden, önceki günden kalma paketle yola çıktıysa gibi
+      // nadir bir senaryo) bu paketler için InTransit kaydı atlanır; günün geri kalanında
+      // kurye bilinen bir durağa vardığında normal akış zaten devam eder.
+      if (!this.currentLocation) {
+        console.warn('[InTransit] currentLocation bilinmiyor, bu ayrılış için InTransit kaydı atlandı.');
+        return;
+      }
       for (const pkg of this.myPackages) {
         const success = await actionQueue.queueAction({
           packageId: pkg.id,
