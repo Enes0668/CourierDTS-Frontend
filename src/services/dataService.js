@@ -237,7 +237,9 @@ export const dataService = {
    */
   async getTourHistoryByBarcode(barcode) {
     try {
-      const response = await api.get(`/packages/route?barcode=${barcode}`);
+      // Backend bu ucu (barkod hassas bir tanımlayıcı olduğu için) GET query'den
+      // POST body'ye taşıdı — bkz. journeys-degisiklik-dokumani.md #4.
+      const response = await api.post('/packages/route', { barcode });
       const data = response.data?.items ? response.data.items : (response.data || []);
       const points = Array.isArray(data) ? data : (data.data || []);
       return points.map(normalizeGpsPoint);
@@ -249,12 +251,13 @@ export const dataService = {
 
   /**
    * İlgili turun GPS telemetri (konum geçmişi) verilerini getirir.
-   * @param {string} journeyId - Telemetrisi alınacak turun ID'si.
+   * @param {string|number} journeyId - Telemetrisi alınacak turun ID'si.
    * @returns {Promise<Array>} Koordinat noktalarının listesi.
    */
   async getTelemetry(journeyId) {
     try {
-      const response = await api.get(`/telemetry?journeyId=${journeyId}`);
+      // bkz. journeys-degisiklik-dokumani.md #4 — GET'ten POST body'ye taşındı.
+      const response = await api.post('/telemetry', { journeyId: parseInt(journeyId) });
       const data = response.data?.items ? response.data.items : (response.data || []);
       const points = Array.isArray(data) ? data : (data.data || []);
       return points.map(normalizeGpsPoint);
@@ -564,7 +567,9 @@ export const dataService = {
    */
   async getPackageHistories(params = {}) {
     try {
-      const response = await api.get('/packagehistories', { params });
+      // bkz. journeys-degisiklik-dokumani.md #4 — GET query'den POST body'ye taşındı
+      // (chain-of-custody geçmişi hassas kabul edildiği için).
+      const response = await api.post('/packagehistories', params);
       const data = response.data?.items ? response.data.items : (response.data || []);
       return Array.isArray(data) ? data : [];
     } catch (error) {

@@ -532,6 +532,17 @@ export default {
             });
           } catch (e) {
             console.warn("Rota güncellenemedi (replan), yerel olarak devam ediliyor.", e);
+            // Backend artık geçersiz endLocationId'de anlamlı bir 400 mesajı dönüyor
+            // (bkz. journeys-degisiklik-dokumani.md #3) — bu, ağ kesintisi değil gerçek
+            // bir doğrulama hatası demektir, sessizce yutmayıp kuryeye gösteriyoruz.
+            // e.response yoksa (gerçek ağ/timeout hatası) eski davranış gibi sessizce
+            // yerel olarak devam ediyoruz — offline tolerance bozulmasın diye.
+            if (e.response && e.response.data) {
+              const msg = typeof e.response.data === 'string'
+                ? e.response.data
+                : (e.response.data.message || e.response.data.title || 'Rota güncellenemedi.');
+              toast.error(`${msg} (EndLocId eski durakta kalmış olabilir, admin panelinde kontrol edin.)`);
+            }
           }
         } else {
           try {
