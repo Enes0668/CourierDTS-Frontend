@@ -831,7 +831,12 @@ export default {
       if (isConfirmed) {
         try {
           if (this.currentJourneyId) {
-            await dataService.cancelJourney(this.currentJourneyId);
+            // actionNotes (kuryenin yazdığı iptal sebebi) artık backend'e gerçekten
+            // gidiyor — CancelJourneyRequest.notes. Önceden bu sadece telemetry.
+            // cancelDelivery()'e veriliyordu ama DELIVERY_CANCELLED event'i
+            // actual_path_segment içermediği için hiçbir zaman API'ye gönderilmiyordu
+            // (bkz. telemetryServices.js _packageAndSend), yani not sessizce kayboluyordu.
+            await dataService.cancelJourney(this.currentJourneyId, this.actionNotes);
           }
           telemetry.cancelDelivery(`Rota İptal: ${this.actionNotes}`, 0);
           // İptal edilen sefer artık backend'de kapalı bir kayıt; bir sonraki "Yola Çık"

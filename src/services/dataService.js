@@ -179,9 +179,14 @@ export const dataService = {
    * @param {string} journeyId - İptal edilecek turun ID'si.
    * @returns {Promise<Object>} İşlem sonucu.
    */
-  async cancelJourney(journeyId) {
+  /**
+   * @param {number|string} journeyId
+   * @param {string} [notes] - Kuryenin iptal sebebi olarak yazdığı not (opsiyonel).
+   *   Backend'de CancelJourneyRequest.notes (nullable string) olarak karşılığı var.
+   */
+  async cancelJourney(journeyId, notes) {
     try {
-      const response = await api.put(`/journeys/${journeyId}/cancel`);
+      const response = await api.put(`/journeys/${journeyId}/cancel`, { notes: notes || null });
       return response.data;
     } catch (error) {
       console.error("API Error (cancelJourney):", error);
