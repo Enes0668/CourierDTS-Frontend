@@ -827,25 +827,48 @@ export default {
         toast.error("İşlem reddedildi. Üzerinizde bu sefere ait teslim edilmemiş paket olabilir.");
       }
     },
+    /**
+     * "Rotayı İptal Et" SADECE o anki tek durağa/teslimata ait denemeden vazgeçmek —
+     * günün tamamını (Journey/courier_tour'u) iptal ETMİYORUZ. courier_tour "büyük
+     * gün" granülerliğinde (bkz. sohbetteki mimari karar); bu buton ise durak/paket
+     * seviyesinde bir aksiyon. Bu yüzden dataService.cancelJourney() (Journeys.Status'u
+     * Cancelled yapan, günü kapatan uç) burada ARTIK ÇAĞRILMIYOR — journey canlı kalmaya
+     * devam ediyor, currentJourneyId sıfırlanmıyor. İptal sebebi (actionNotes), bunun
+     * yerine o durakta alınacak/bırakılacak olan her paket için PackageHistories'e
+     * "Cancelled" actionType'ıyla düşülüyor (undoPickup()'ın kullandığı aynı mekanizma).
+     * Paketlerin status'una dokunulmuyor — kurye elindekini elinde tutmaya, almadığını
+     * almamaya devam ediyor, bu sadece bir denetim izi (audit trail) kaydı.
+     */
     async handleCancelChoice(isConfirmed) {
       if (isConfirmed) {
         try {
-          if (this.currentJourneyId) {
-            // actionNotes (kuryenin yazdığı iptal sebebi) artık backend'e gerçekten
-            // gidiyor — CancelJourneyRequest.notes. Önceden bu sadece telemetry.
-            // cancelDelivery()'e veriliyordu ama DELIVERY_CANCELLED event'i
-            // actual_path_segment içermediği için hiçbir zaman API'ye gönderilmiyordu
-            // (bkz. telemetryServices.js _packageAndSend), yani not sessizce kayboluyordu.
-            await dataService.cancelJourney(this.currentJourneyId, this.actionNotes);
+          const courierId = localStorage.getItem('courier_id') || 5;
+          const lat = this.mockPosition ? this.mockPosition.lat : 0;
+          const lng = this.mockPosition ? this.mockPosition.lng : 0;
+          const targetLocationId = this.selectedNextStop ? this.selectedNextStop.id : null;
+
+          if (targetLocationId != null) {
+            const affectedPackages = [...this.packagesToPickup, ...this.packagesToDropoff];
+            for (const pkg of affectedPackages) {
+              await actionQueue.queueAction({
+                packageId: pkg.id,
+                locationId: targetLocationId,
+                latitude: lat,
+                longitude: lng,
+                actionType: 'Cancelled',
+                actionTime: new Date().toISOString(),
+                notes: this.actionNotes
+              }, courierId, this.currentJourneyId);
+            }
           }
+
           telemetry.cancelDelivery(`Rota İptal: ${this.actionNotes}`, 0);
-          // İptal edilen sefer artık backend'de kapalı bir kayıt; bir sonraki "Yola Çık"
-          // bu ID'yi replan etmeye çalışmasın diye temizliyoruz, yeni bir sefer başlatılsın.
-          this.currentJourneyId = null;
-          // GPS takibi vardiya boyunca sürmeli, sadece bu rota iptal edildi.
+          toast.info("Durak iptal edildi, yeni bir hedef seçebilirsiniz.");
+          // GPS takibi ve journey (sefer) vardiya boyunca sürmeli, sadece bu durak
+          // iptal edildi — currentJourneyId'ye kasıtlı olarak dokunmuyoruz.
           this.resetJourneyState();
         } catch (error) {
-          toast.error("Sefer iptal edilirken bir hata oluştu.");
+          toast.error("İptal işlemi sırasında bir hata oluştu.");
         }
       } else {
         this.showConfirmation = false;
